@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use crate::Digest;
 
 // 服务类型
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Default)]
@@ -60,5 +61,5 @@ pub struct ServerServiceConfig {
 pub struct ServiceConfig {
     pub bind_addr: String,
     pub default_token: Option<String>,
-    pub services: HashMap<String, ServerServiceConfig>,
+    pub services: HashMap<Digest, ServerServiceConfig>,
 }
