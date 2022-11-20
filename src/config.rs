@@ -56,10 +56,10 @@ pub struct ServerServiceConfig {
     pub transport_type: TransportType,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ServiceConfig {
     pub bind_addr: String,
     pub default_token: Option<String>,
-    pub services: HashMap<Digest, ServerServiceConfig>,
+    pub services: HashMap<String, ServerServiceConfig>,
 }

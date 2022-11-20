@@ -1,5 +1,7 @@
-use anyhow::Result;
-use red_quic::{run, Config};
+use anyhow::{Context, Result};
+use red_quic::{ Config};
+use red_quic::config::{ServiceConfig, ServiceType};
+use red_quic::services::run_server;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -20,11 +22,25 @@ async fn main() -> Result<()> {
             panic!("Failed to send shutdown signal: {:?}", e);
         }
     });
-    run(
-        Config {
-            ..Default::default()
-        },
-        all_shutdown_rx,
-    )
-    .await
+    let config = Config {
+        service_type: Default::default(),
+        name: "test".to_string(),
+        service_config: Some(ServiceConfig {
+            bind_addr: "127.0.0.1:7799".to_string(),
+            default_token: None,
+            services: Default::default()
+        }),
+        client_config: None
+    };
+    // 判断 运行的类型
+
+    match config.service_type {
+        ServiceType::Client => {}
+        ServiceType::Service => {
+            run_server(config.service_config.unwrap(),
+                       all_shutdown_rx
+            ).await;
+        }
+    }
+    Ok(())
 }

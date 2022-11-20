@@ -17,3 +17,4 @@ quinn = "0.9.1"
 rustls = { version = "0.20.*", features = ["quic"], default-features = false }
 rustls-pemfile = "1.0.*"
 sha2 = "0.10"
+rcgen ='0.10.0'
