@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use red_quic::{ Config};
+use red_quic::client::run_client;
 use red_quic::config::{ServiceConfig, ServiceType};
 use red_quic::services::run_server;
 
@@ -35,7 +36,9 @@ async fn main() -> Result<()> {
     // 判断 运行的类型
 
     match config.service_type {
-        ServiceType::Client => {}
+        ServiceType::Client => {
+            run_client(config.client_config.unwrap(),all_shutdown_rx).await;
+        }
         ServiceType::Service => {
             run_server(config.service_config.unwrap(),
                        all_shutdown_rx
