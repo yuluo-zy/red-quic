@@ -36,6 +36,7 @@ pub struct Config {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ClientServiceConfig {
+    pub local_addr: String,
     pub name: String,
     pub transport_type: TransportType,
 }
@@ -44,7 +45,6 @@ pub struct ClientServiceConfig {
 #[serde(deny_unknown_fields)]
 pub struct ClientConfig {
     pub remote_addr: String,
-    pub local_addr: String,
     pub default_token: Option<String>,
     pub services: HashMap<String, ClientServiceConfig>,
     pub heartbeat_timeout: u64,
