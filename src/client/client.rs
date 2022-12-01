@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use tracing::{Instrument, Span};
-use tracing::log::{Level, log};
+use tracing::log::{info, Level, log};
 
 use crate::client::handle::{ClientChannel, ClientChannelHandle};
 use crate::config::ClientConfig;
@@ -27,7 +27,8 @@ impl Clients {
         //     self.service_handles.insert(item.0.clone(), item.1.clone())
         // }
         // 创建 链接通道然后开始认证
-        let mut control_channel = ClientChannel::build(self.config.clone(), );
+        info!("开始创建");
+        let mut control_channel = ClientChannel::build(self.config.clone(), ).await;
         // tokio::spawn(async move {
         //     while let Err(e) = control_channel.run().await.with_context(|| "失败情动"){
         //         // 条件判断是否要重新启动

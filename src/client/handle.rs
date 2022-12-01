@@ -5,7 +5,8 @@ use anyhow::Result;
 use quinn::{Connection, Endpoint};
 use rustls::client::{ServerCertVerified, ServerCertVerifier};
 use quinn::ClientConfig as QuinnClientConfig;
-use tracing::log::{debug, warn};
+use tracing::info;
+use tracing::log::{debug, log, warn};
 use crate::config::ClientConfig;
 use crate::Digest;
 
@@ -39,13 +40,14 @@ impl ClientChannel {
     pub async fn build(config: ClientConfig) ->Result<Self> {
         let bind_addr =  SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0));
         let remote_addr = config.remote_addr.parse::<SocketAddr>().unwrap();
+        info!("构建本地监听内容");
         let conn = Endpoint::client(bind_addr).unwrap()
             .connect_with(
                 configure_client(),
                 remote_addr,
                 "test"
             ).unwrap();
-
+        info!("连接远程地址");
         let conn = match conn.into_0rtt() {
             Ok((conn, _) ) => conn,
             Err(conn) =>{
@@ -69,6 +71,8 @@ impl ClientChannel {
             transport: conn.clone(),
             heartbeat_timeout: 10
         } ;
+        info!("创建连接");
+        // 提交任务开始
         tokio::spawn(Self::send_authentication(conn.clone()));
         // heartbeat
         // tokio::spawn(Self::heartbeat(conn.clone(), config.heartbeat_interval));
@@ -81,6 +85,12 @@ impl ClientChannel {
     }
     async fn send_authentication(self)  {
         async fn send_token(conn: &Connection, token: String) -> Result<()> {
+            info!("开始认证");
+            let (mut _sendStream, mut _reacvStream)  = conn.open_bi().await?;
+            let vec = [4u8, 2u8, 3u8,4u8,4u8, 2u8, 3u8,4u8];
+            _sendStream.write_all(&vec).await?;
+            info!("发送完毕");
+            _sendStream.finish().await?;
             Ok(())
         }
 
