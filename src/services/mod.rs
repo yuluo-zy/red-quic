@@ -4,7 +4,6 @@ use crate::config::ServiceConfig;
 use crate::services::service::Services;
 
 pub mod handle;
-pub mod multi_map;
 pub mod service;
 
 pub async fn run_server(config: ServiceConfig, all_shutdown_rx: broadcast::Receiver<bool>) {

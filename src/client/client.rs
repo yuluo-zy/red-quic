@@ -28,7 +28,7 @@ impl Clients {
         // }
         // 创建 链接通道然后开始认证
         info!("开始创建");
-        let mut control_channel = ClientChannel::build(self.config.clone(), ).await;
+        let mut control_channel = ClientChannel::build(self.config.clone()).await;
         // tokio::spawn(async move {
         //     while let Err(e) = control_channel.run().await.with_context(|| "失败情动"){
         //         // 条件判断是否要重新启动
