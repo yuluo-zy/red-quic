@@ -1,14 +1,29 @@
+use std::env;
 use anyhow::{Context, Result};
+use tracing::{error, info};
 use red_quic::{ Config};
 use red_quic::client::run_client;
 use red_quic::config::{ServiceConfig, ServiceType};
 use red_quic::services::run_server;
+use clap::Parser;
+use tracing_subscriber::EnvFilter;
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+
+    #[arg(short, long)]
+    service: String,
+}
 #[tokio::main]
 async fn main() -> Result<()> {
-    // 初始化日志设置
+    let args = Args::parse();
+
+
+    // info!("{args}");
     console_subscriber::init();
     tracing::info!("console_subscriber enabled");
+    info!("{0}", args.service);
     // 设置参数解析
 
     // 设置全局监听通道
