@@ -47,7 +47,7 @@ impl ClientChannel {
         info!("构建本地监听内容");
 
         let addr: SocketAddr =config.remote_addr.parse()?;
-        let connect = Connect::new(addr).with_server_name("localhost");
+        let connect = Connect::new(addr).with_server_name("tea.yuluo.website");
         info!("发送1");
         let mut connection = client.connect(connect).await?;
         info!("发送2");
