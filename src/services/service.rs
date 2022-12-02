@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::path::Path;
 use std::sync::{Arc, RwLock};
 use s2n_quic::Server;
 use tracing::error;
@@ -12,7 +13,6 @@ use crate::Digest;
 
 use crate::utils::{digest};
 
-#[derive(Clone)]
 pub struct Services {
     server: Server,
     config: Arc<ServiceConfig>,
@@ -30,9 +30,11 @@ impl Services {
         let socket_addr = config.bind_addr.parse::<SocketAddr>().unwrap();
         // let transport = Endpoint::server(Self::init_endpoint_config().await, socket_addr)?;
         let mut server = Server::builder()
-            .with_tls(("../key/cert.pem", "../key/key.pem"))?
-            .with_io("0.0.0.0:7779")?
-            .start()?;
+            .with_tls((Path::new("C:\\Users\\Administrator\\CLionProjects\\red-quic\\src\\key\\cert.pem"),
+                       Path::new("C:\\Users\\Administrator\\CLionProjects\\red-quic\\src\\key\\key.pem")))?
+            .with_io("127.0.0.1:7799")?
+            .start().unwrap();
+        info!("创建成功");
         Ok(Services {
             config,
             server,
@@ -54,13 +56,14 @@ impl Services {
         loop {
             tokio::select! {
                 ret = self.server.accept() => {
+                    info!("一个新的请求");
                     match ret {
                         Some(mut conn) => {
                             // 接受的是 正在创建的内容
                              info!("conn...");
                             // let service = self.clone();
-                            let control_channel = ControlChannel::build(conn.clone());
-                            control_channel.handle(conn).await
+                            let control_channel = ControlChannel::build(conn);
+                            control_channel.handle().await
                         }
                         _ => {
                              error!("conn error")
