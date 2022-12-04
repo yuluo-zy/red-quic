@@ -15,6 +15,7 @@ struct Args {
     #[arg(short, long)]
     service: String,
 }
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();

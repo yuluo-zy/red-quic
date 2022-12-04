@@ -9,7 +9,7 @@ use s2n_quic::client::Connect;
 use tracing::info;
 use tracing::log::{debug, log, warn};
 use crate::config::ClientConfig;
-use crate::Digest;
+use crate::{CERT_PEM, Digest};
 
 pub struct ClientChannelHandle {
     shutdown_tx: oneshot::Sender<u8>,
@@ -41,13 +41,13 @@ impl ClientChannel {
         // let bind_addr =  SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0));
         // let remote_addr = config.remote_addr.parse::<SocketAddr>().unwrap();
         let client = Client::builder()
-            .with_tls(Path::new("C:\\Users\\Administrator\\CLionProjects\\red-quic\\src\\key\\cert.pem"))?
+            .with_tls(CERT_PEM)?
             .with_io("0.0.0.0:0")?
             .start().unwrap();
         info!("构建本地监听内容");
 
         let addr: SocketAddr =config.remote_addr.parse()?;
-        let connect = Connect::new(addr).with_server_name("tea.yuluo.website");
+        let connect = Connect::new(addr).with_server_name("localhost");
         info!("发送1");
         let mut connection = client.connect(connect).await?;
         info!("发送2");
