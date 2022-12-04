@@ -1096,6 +1096,7 @@ dependencies = [
  "bytes",
  "clap",
  "console-subscriber",
+ "parking_lot",
  "s2n-quic",
  "serde",
  "sha2",

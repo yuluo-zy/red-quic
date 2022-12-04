@@ -11,8 +11,6 @@ use crate::config::{ServerServiceConfig, ServiceConfig};
 use crate::services::handle::{ControlChannel, ControlChannelHandle};
 use crate::{CERT_PEM, Digest, KEY_PEM};
 
-use crate::utils::{digest};
-
 pub struct Services {
     server: Server,
     config: Arc<ServiceConfig>,
@@ -32,9 +30,9 @@ impl Services {
         let mut server = Server::builder()
             .with_tls((CERT_PEM,
                        KEY_PEM))?
-            .with_io("127.0.0.1:7799")?
+            .with_io(socket_addr)?
             .start().unwrap();
-        info!("创建成功");
+        info!("监听服务创建成功");
         Ok(Services {
             config,
             server,
@@ -43,13 +41,13 @@ impl Services {
 
 
     // 生成 服务列表
-    pub fn generate_service(config: &ServiceConfig) -> HashMap<Digest, ServerServiceConfig> {
-        let mut map = HashMap::new();
-        for item in &config.services {
-            map.insert(digest(item.0.as_bytes()), (item.1).clone());
-        }
-        map
-    }
+    // pub fn generate_service(config: &ServiceConfig) -> HashMap<Digest, ServerServiceConfig> {
+    //     let mut map = HashMap::new();
+    //     for item in &config.services {
+    //         map.insert(digest(item.0.as_bytes()), (item.1).clone());
+    //     }
+    //     map
+    // }
 
     // 开始运行
     pub async fn run(&mut self, mut shutdown_rx: tokio::sync::broadcast::Receiver<bool>) {
@@ -58,47 +56,6 @@ impl Services {
             let control_channel = ControlChannel::build(connection);
             control_channel.handle().await;
         }
-        // loop {
-        //     tokio::select! {
-        //         ret = self.server.accept() => {
-        //             info!("一个新的请求");
-        //             match ret {
-        //                 Some(mut conn) => {
-        //                     // 接受的是 正在创建的内容
-        //                      info!("conn...");
-        //                     // let service = self.clone();
-        //                     let control_channel = ControlChannel::build(conn);
-        //                     control_channel.handle().await
-        //                 }
-        //                 _ => {
-        //                      error!("conn error")
-        //                 }
-        //             }
-        //         },
-        //         _ = shutdown_rx.recv() => {
-        //             info!("Shuting down gracefully...");
-        //             break;
-        //         },
-        //     }
-        // }
-        // while let Some(mut connection) = self.server.accept().await {
-        //     // spawn a new task for the connection
-        //     tokio::spawn(async move {
-        //         eprintln!("Connection accepted from {:?}", connection.remote_addr());
-        //
-        //         while let Ok(Some(mut stream)) = connection.accept_bidirectional_stream().await {
-        //             // spawn a new task for the stream
-        //             tokio::spawn(async move {
-        //                 eprintln!("Stream opened from {:?}", stream.connection().remote_addr());
-        //
-        //                 // echo any data back to the stream
-        //                 while let Ok(Some(data)) = stream.receive().await {
-        //                     // stream.send(data).await.expect("stream should be open");
-        //                     info!("{:?}", data)
-        //                 }
-        //             });
-        //         }
-        //     });
-        // }
+
     }
 }
