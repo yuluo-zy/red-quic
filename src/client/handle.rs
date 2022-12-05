@@ -1,12 +1,11 @@
 use std::net::{Ipv4Addr, SocketAddr};
-use std::path::Path;
-use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::oneshot;
 use anyhow::Result;
 use bytes::Bytes;
 use s2n_quic::{Client, Connection};
 use s2n_quic::client::Connect;
-use s2n_quic::stream::SendStream;
+use tokio::time::sleep;
 use tracing::{callsite, info};
 use tracing::log::{debug, log, warn};
 use crate::config::ClientConfig;
@@ -27,6 +26,7 @@ impl ClientChannelHandle {
 // //
 //     }
 }
+
 
 pub struct ClientChannel {
     pub(crate) digest: String,
@@ -51,28 +51,29 @@ impl ClientChannel {
         info!("尝试连接远程");
         let mut connection = client.connect(connect).await?;
         connection.keep_alive(true)?;
-        let mut client_channel = Self::new(connection, config).await;
-        Ok(client_channel)
+       Self::new(connection, config).await
     }
 
-    async fn new(conn:Connection, config: ClientConfig) -> Self {
+    async fn new(conn:Connection, config: ClientConfig) -> Result<Self> {
         info!("创建连接");
         let conn = Self {
             digest: config.default_token.unwrap(),
             transport: conn,
             heartbeat_timeout: 10
         } ;
-        conn
+        Ok(conn)
     }
     pub async fn run(&mut self) -> Result<()> {
         // 开始写认证链接并创建相关数据通路的代码
+        self.send_authentication().await;
         Ok(())
     }
-    async fn send_authentication(mut self)  {
+    async fn send_authentication(& self)  {
 
         info!("开始进行认证操作");
-        let mut conn = self.transport.open_send_stream().await?;
+        let  mut conn = self.transport.handle().open_bidirectional_stream().await.unwrap();
         let digest = Bytes::from(self.digest.clone());
+        info!("[{:?}] 认证秘钥", digest);
 
         match conn.send(digest).await {
             Ok(_) => {
@@ -81,6 +82,13 @@ impl ClientChannel {
             Err(err) => {
                 warn!("[relay] [connection] [authentication] {err}")
             }
+        }
+
+        loop {
+            sleep(Duration::new(5,0)).await;
+            let digest = Bytes::from("hello");
+            info!("写入");
+            conn.send(digest).await.unwrap();
         }
 
     }

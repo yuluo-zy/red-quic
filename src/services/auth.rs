@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll, Waker};
 use parking_lot::Mutex;
+use tracing::log::info;
 
 #[derive(Clone)]
 pub struct IsClosed {
@@ -75,6 +76,7 @@ impl Future for IsAuth {
     type Output = bool;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        info!("检查认证");
         if self.is_close.check() {
             Poll::Ready(false)
         } else if self.is_auth.load(Ordering::Relaxed) {

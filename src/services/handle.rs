@@ -1,12 +1,15 @@
+use std::sync::Arc;
 use std::time::Duration;
 use s2n_quic::Connection;
 use tracing::log::{info};
 use crate::services::auth::{IsAuth, IsClosed};
 use tokio::time;
 use anyhow::{anyhow, Result};
+use tokio::sync::RwLock;
 use s2n_quic::application::Error as S2N_Error;
+use s2n_quic::stream::BidirectionalStream;
 use thiserror::Error;
-use tracing::error;
+use tracing::{error, warn};
 
 #[derive(Error, Debug, Clone)]
 pub enum HandleError {
@@ -39,9 +42,8 @@ impl From<HandleError> for S2N_Error {
     }
 }
 
-
 pub struct ControlChannel {
-    service: Connection,
+    service: Arc<RwLock<Connection>>,
     is_auth: IsAuth,
 }
 
@@ -49,44 +51,57 @@ impl ControlChannel {
     pub fn build(service: Connection) -> Self {
         info!("创建端点转发服务");
         ControlChannel {
-            service,
+            service: Arc::new(RwLock::new(service)),
             is_auth: IsAuth::new(IsClosed::new()),
         }
     }
     pub async fn handle(&self) {
-        let addr = self.service.remote_addr().unwrap();
+        let addr = self.service.read().await.remote_addr().unwrap();
         info!("[{addr}] 远程连接");
         let res = tokio::select! {
-                res = self.handle_authentication_timeout(Duration::new(10,0)) => res,
+                res = self.handle_authentication_timeout(Duration::new(20,0)) => res,
                 res = self.echo() => res,
             };
     }
 
     pub async fn handle_authentication_timeout(&self, timeout: Duration) -> Result<()> {
+        info!("认证函数");
         let is_timeout = tokio::select! {
-           _ = self.is_auth.clone() => false,
-           () = time::sleep(timeout) => true
+           _=  self.is_auth.clone() => false,
+           _=  time::sleep(timeout) => true
        };
+        info!("认证完成");
+        info!("1");
         if !is_timeout {
             Ok(())
         } else {
             let error = HandleError::AuthenticationTimeout;
-            self.service.close(error.clone().into());
+            info!("2");
+            self.service.read().await.close(error.clone().into());
+            info!("3");
             self.is_auth.wake();
-            let rmt_addr = self.service.remote_addr().unwrap();
+            info!("4");
+            let rmt_addr = self.service.read().await.remote_addr().unwrap();
+            info!("5");
             error!("[{rmt_addr}] 连接认证失败!");
             Err(anyhow!(error))
         }
     }
     pub async fn echo(&self) -> Result<()> {
-        while let Ok(mut res) = self.service.handle().open_bidirectional_stream().await {
-            tokio::spawn(async move {
-                while let Ok(Some(data)) = res.receive().await {
-                    let _ = data.iter().map(|a| info!("{}",1));
-                    info!("{:?}", data)
-                }
-            });
-        };
+        let mut stream = None ;
+        {
+            if let Ok(Some(data_stream)) = self.service.write().await.accept_bidirectional_stream().await {
+                stream = Some(data_stream);
+            }
+        }
+        match stream{
+            None => {}
+            Some(mut stream) => {
+                while let Ok(Some(data)) = stream.receive().await {
+                    warn!("{:?}", data)
+                };
+            }
+        }
         Ok(())
     }
 }
