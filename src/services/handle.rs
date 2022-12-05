@@ -3,6 +3,7 @@ use s2n_quic::Connection;
 use tracing::log::{info};
 use crate::services::auth::{IsAuth, IsClosed};
 use tokio::time;
+use anyhow::{anyhow, Result};
 use s2n_quic::application::Error as S2N_Error;
 use thiserror::Error;
 use tracing::error;
@@ -52,19 +53,16 @@ impl ControlChannel {
             is_auth: IsAuth::new(IsClosed::new()),
         }
     }
-    pub async fn handle(mut self) {
-        while let Ok(Some(mut conn)) = self.service.accept_bidirectional_stream().await {
-            tokio::spawn(async move {
-                info!("Stream opened from {:?}", conn.connection().remote_addr());
-                while let Ok(Some(data)) = conn.receive().await {
-                    let _ = data.iter().map(|a| info!("{}",1));
-                    info!("{:?}", data)
-                }
-            });
-        };
+    pub async fn handle(&self) {
+        let addr = self.service.remote_addr().unwrap();
+        info!("[{addr}] 远程连接");
+        let res = tokio::select! {
+                res = self.handle_authentication_timeout(Duration::new(10,0)) => res,
+                res = self.echo() => res,
+            };
     }
 
-    pub async fn handle_authentication_timeout(self, timeout: Duration) -> Result<(), HandleError> {
+    pub async fn handle_authentication_timeout(&self, timeout: Duration) -> Result<()> {
         let is_timeout = tokio::select! {
            _ = self.is_auth.clone() => false,
            () = time::sleep(timeout) => true
@@ -77,8 +75,19 @@ impl ControlChannel {
             self.is_auth.wake();
             let rmt_addr = self.service.remote_addr().unwrap();
             error!("[{rmt_addr}] 连接认证失败!");
-            Err(error)
+            Err(anyhow!(error))
         }
+    }
+    pub async fn echo(&self) -> Result<()> {
+        while let Ok(mut res) = self.service.handle().open_bidirectional_stream().await {
+            tokio::spawn(async move {
+                while let Ok(Some(data)) = res.receive().await {
+                    let _ = data.iter().map(|a| info!("{}",1));
+                    info!("{:?}", data)
+                }
+            });
+        };
+        Ok(())
     }
 }
 
