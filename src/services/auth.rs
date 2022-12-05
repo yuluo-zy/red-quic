@@ -12,14 +12,13 @@ pub struct IsClosed {
 }
 
 impl IsClosed {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             is_closed: Arc::new(AtomicBool::new(false)),
             waker: Arc::new(Mutex::new(None)),
         }
     }
-
-    fn set_close(&self) {
+    pub fn set_close(&self) {
         self.is_closed.store(true, Ordering::Release);
         if let Some(waker) = self.waker.lock().take() {
             waker.wake();
@@ -44,6 +43,7 @@ impl Future for IsClosed {
     }
 }
 
+#[derive(Clone)]
 pub struct IsAuth {
     is_close: IsClosed,
     is_auth: Arc<AtomicBool>,
@@ -65,7 +65,7 @@ impl IsAuth {
 
     pub fn wake(&self) {
         // 批量唤醒
-        for item  in self.waker.lock().drain(..) {
+        for item in self.waker.lock().drain(..) {
             item.wake()
         }
     }
@@ -77,7 +77,7 @@ impl Future for IsAuth {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         if self.is_close.check() {
             Poll::Ready(false)
-        } else if self.is_auth.load(Ordering::Relaxed){
+        } else if self.is_auth.load(Ordering::Relaxed) {
             Poll::Ready(true)
         } else {
             self.waker.lock().push(cx.waker().clone());

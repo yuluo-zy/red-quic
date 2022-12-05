@@ -21,7 +21,7 @@ pub struct Services {
 impl Services {
     pub async fn init(_config: ServiceConfig) -> Result<Services> {
         let config = Arc::new(_config);
-        let services = Arc::new(RwLock::new(Self::generate_service(&config)));
+        // let services = Arc::new(RwLock::new(Self::generate_service(&config)));
         // 配置控制通道
         // let control_channels = Arc::new(RwLock::new(ControlChannelMap::new()));
         // 创建 监听套接字
