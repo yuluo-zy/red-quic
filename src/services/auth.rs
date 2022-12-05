@@ -5,31 +5,29 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll, Waker};
 use parking_lot::Mutex;
 
-struct IsClosedInner {
-    is_closed: AtomicBool,
-    waker: Mutex<Option<Waker>>,
-}
-
 #[derive(Clone)]
-pub struct IsClosed(Arc<IsClosedInner>);
+pub struct IsClosed {
+    is_closed: Arc<AtomicBool>,
+    waker: Arc<Mutex<Option<Waker>>>,
+}
 
 impl IsClosed {
     fn new() -> Self {
-        Self(Arc::new(IsClosedInner{
-            is_closed: AtomicBool::new(false),
-            waker: Mutex::new(None),
-        }))
+        Self {
+            is_closed: Arc::new(AtomicBool::new(false)),
+            waker: Arc::new(Mutex::new(None)),
+        }
     }
 
     fn set_close(&self) {
-        self.0.is_closed.store(true, Ordering::Release);
-        if let Some(waker) = self.0.waker.lock().take() {
+        self.is_closed.store(true, Ordering::Release);
+        if let Some(waker) = self.waker.lock().take() {
             waker.wake();
         }
     }
 
-    fn check(&self) ->bool {
-        self.0.is_closed.load(Ordering::Acqukire)
+    fn check(&self) -> bool {
+        self.is_closed.load(Ordering::Acquire)
     }
 }
 
@@ -37,17 +35,54 @@ impl Future for IsClosed {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if self.0.is_closed.load(Ordering::Acquire) {
+        if self.is_closed.load(Ordering::Acquire) {
             Poll::Ready(())
-        }else {
-            *self.0.waker.lock() = Some(cx.waker().clone());
+        } else {
+            *self.waker.lock() = Some(cx.waker().clone());
             Poll::Pending
         }
     }
 }
 
-
-
 pub struct IsAuth {
-
+    is_close: IsClosed,
+    is_auth: Arc<AtomicBool>,
+    waker: Arc<Mutex<Vec<Waker>>>,
 }
+
+impl IsAuth {
+    pub fn new(is_close: IsClosed) -> Self {
+        Self {
+            is_close,
+            is_auth: Arc::new(AtomicBool::new(false)),
+            waker: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub fn set_auth(&self) {
+        self.is_auth.store(true, Ordering::Release);
+    }
+
+    pub fn wake(&self) {
+        // 批量唤醒
+        for item  in self.waker.lock().drain(..) {
+            item.wake()
+        }
+    }
+}
+
+impl Future for IsAuth {
+    type Output = bool;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if self.is_close.check() {
+            Poll::Ready(false)
+        } else if self.is_auth.load(Ordering::Relaxed){
+            Poll::Ready(true)
+        } else {
+            self.waker.lock().push(cx.waker().clone());
+            Poll::Pending
+        }
+    }
+}
+
