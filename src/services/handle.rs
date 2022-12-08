@@ -4,10 +4,12 @@ use s2n_quic::Connection;
 use tracing::log::{info};
 use crate::services::auth::{IsAuth, IsClosed};
 use tokio::time;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+use crate::protocol::Command;
 use tokio::sync::RwLock;
 use s2n_quic::application::Error as S2N_Error;
 use s2n_quic::connection::Handle;
+use s2n_quic::stream::BidirectionalStream;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{error, warn};
@@ -45,13 +47,15 @@ impl From<HandleError> for S2N_Error {
 
 pub struct ControlChannel {
     is_auth: IsAuth,
+    digest: [u8;32]
 }
 
 impl ControlChannel {
-    pub fn build() -> Self {
+    pub fn build(digest: [u8;32]) -> Self {
         info!("创建端点转发服务");
         ControlChannel {
             is_auth: IsAuth::new(IsClosed::new()),
+            digest
         }
     }
     pub async fn handle(&mut self, conn: Connection) {
@@ -59,7 +63,7 @@ impl ControlChannel {
         info!("[{addr}] 远程连接");
         let res = tokio::select! {
                 res = self.handle_authentication_timeout(conn.handle(), Duration::new(20,0)) => res,
-                res = self.echo(conn) => res,
+                res = self.run(conn) => res,
             };
     }
 
@@ -83,18 +87,36 @@ impl ControlChannel {
             Err(anyhow!(error))
         }
     }
-    pub async fn echo(&self, mut conn: Connection) -> Result<()> {
-        if let Ok(Some(data_stream)) = conn.accept_bidirectional_stream().await {
-            match Some(data_stream) {
-                None => {}
-                Some(mut stream) => {
-                    while let Ok(Some(data)) = stream.receive().await {
-                        warn!("{:?}", data)
-                    };
-                }
-            }
+    pub async fn run(&self, mut conn: Connection) -> Result<()> {
+        info!("run");
+        while let Ok(Some(data_stream)) = conn.accept_bidirectional_stream().await {
+            info!("handshake");
+            self.handshake(data_stream).await;
         }
         Ok(())
+    }
+
+    pub async fn handshake(&self, mut stream: BidirectionalStream) -> Result<BidirectionalStream> {
+        let token = Command::read_from(&mut stream).await;
+        let addr = stream.connection().remote_addr();
+        info!("handshakeing");
+        info!("{:?}", token);
+        match token {
+            Ok(cmd) => {
+                if let Command::ShakeHands {
+                    digest
+                } = cmd {
+                    if self.digest.eq(&digest) {
+                        info!("握手成功 {:?}", addr);
+                        self.is_auth.set_auth();
+                        self.is_auth.wake();
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+        Ok(stream)
     }
 }
 

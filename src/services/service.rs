@@ -9,7 +9,7 @@ use tracing::info;
 
 use crate::config::{ServerServiceConfig, ServiceConfig};
 use crate::services::handle::{ControlChannel, ControlChannelHandle};
-use crate::{CERT_PEM, Digest, KEY_PEM};
+use crate::{CERT_PEM, KEY_PEM};
 
 pub struct Services {
     server: Server,
@@ -54,7 +54,7 @@ impl Services {
 
         while let Some(connection) = self.server.accept().await {
             info!("构建 server");
-            let mut control_channel = ControlChannel::build();
+            let mut control_channel = ControlChannel::build(self.config.default_token.clone().unwrap());
             control_channel.handle(connection).await;
         }
 

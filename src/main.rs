@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
            name: "test".to_string(),
            service_config: Some(ServiceConfig {
                bind_addr: "127.0.0.1:7799".to_string(),
-               default_token: None,
+               default_token: Some([1;32]),
                services: Default::default()
            }),
            client_config: None
@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
            service_config: None,
            client_config: Some(ClientConfig{
                remote_addr: "127.0.0.1:7799".to_string(),
-               default_token: Some("12345678".to_string()),
+               default_token: Some([1;32]),
                services: Default::default(),
                heartbeat_timeout: 0
            })

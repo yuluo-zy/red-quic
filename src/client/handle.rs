@@ -9,7 +9,9 @@ use tokio::time::sleep;
 use tracing::{callsite, info};
 use tracing::log::{debug, log, warn};
 use crate::config::ClientConfig;
-use crate::{CERT_PEM, Digest};
+use crate::{CERT_PEM};
+use crate::protocol::Command;
+use crate::utils::digest;
 
 pub struct ClientChannelHandle {
     shutdown_tx: oneshot::Sender<u8>,
@@ -29,7 +31,7 @@ impl ClientChannelHandle {
 
 
 pub struct ClientChannel {
-    pub(crate) digest: String,
+    pub(crate) digest: [u8;32],
     // pub(crate) shutdown_rx: oneshot::Receiver<bool>,
     // pub(crate) remote_addr: String,
     // `client.remote_addr`
@@ -72,24 +74,28 @@ impl ClientChannel {
 
         info!("开始进行认证操作");
         let  mut conn = self.transport.handle().open_bidirectional_stream().await.unwrap();
-        let digest = Bytes::from(self.digest.clone());
-        info!("[{:?}] 认证秘钥", digest);
+        info!("[{:?}] 认证秘钥", self.digest.clone());
+        
+        let cmd = Command::ShakeHands {
+            digest: self.digest.clone()
+        };
+        cmd.write_to(&mut conn);
 
-        match conn.send(digest).await {
-            Ok(_) => {
-                info!("[relay] [connection] [authentication]")
-            }
-            Err(err) => {
-                warn!("[relay] [connection] [authentication] {err}")
-            }
-        }
-
-        loop {
-            sleep(Duration::new(5,0)).await;
-            let digest = Bytes::from("hello");
-            info!("写入");
-            conn.send(digest).await.unwrap();
-        }
+        // match conn.send(digest).await {
+        //     Ok(_) => {
+        //         info!("[relay] [connection] [authentication]")
+        //     }
+        //     Err(err) => {
+        //         warn!("[relay] [connection] [authentication] {err}")
+        //     }
+        // }
+        // 
+        // loop {
+        //     sleep(Duration::new(5,0)).await;
+        //     let digest = Bytes::from("hello");
+        //     info!("写入");
+        //     conn.send(digest).await.unwrap();
+        // }
 
     }
 }
