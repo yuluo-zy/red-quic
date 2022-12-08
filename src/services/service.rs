@@ -54,8 +54,8 @@ impl Services {
 
         while let Some(connection) = self.server.accept().await {
             info!("构建 server");
-            let control_channel = ControlChannel::build(connection);
-            control_channel.handle().await;
+            let mut control_channel = ControlChannel::build();
+            control_channel.handle(connection).await;
         }
 
     }
