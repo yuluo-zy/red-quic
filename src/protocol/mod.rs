@@ -10,6 +10,10 @@ pub enum Command {
     ShakeHands {
         digest: [u8; 32],
     },
+    Connect {
+        protocol_type: u8,
+        service_digest: [u8; 32],
+    },
     // Ack(bool),
     Heartbeat,
 }
@@ -19,7 +23,9 @@ impl Command {
     // pub fn Re
     const TYPE_HEART_BEAT: u8 = 0x00;
     const TYPE_CONTROL_HANDS: u8 = 0x01;
-    const TYPE_DATA_HANDS: u8 = 0x02;
+    const TYPE_CONTROL_CONNECT: u8 = 0x02;
+    const TYPE_DATA_CONNECT: u8 = 0x03;
+    // const TYPE_DATA_HANDS: u8 = 0x02;
     // const TYPE_AUTHENTICATE: u8 = 0x02;
 
     const HASH_WIDTH_IN_BYTES: usize = 32;
@@ -37,9 +43,17 @@ impl Command {
                     digest,
                 })
             }
+            Self::TYPE_CONTROL_CONNECT =>{
+                let protocol_type = r.read_u8().await?;
+                let mut  service_digest = [0;32];
+                r.read_exact(&mut service_digest).await?;
+                Ok( Self::Connect {
+                    protocol_type,
+                    service_digest
+                })
+            }
             _ => {
                 error!("Unsupported Server Cmd");
-
                 return Err(anyhow!("Unsupported Server Cmd"));
             }
         }
@@ -61,12 +75,17 @@ impl Command {
             Command::Heartbeat => {
                 buf.put_u8(Self::TYPE_HEART_BEAT)
             }
+            Command::Connect { service_digest, protocol_type } => {
+                buf.put_u8(*protocol_type);
+                buf.put_slice(service_digest);
+            }
         }
     }
 
     pub fn serialized_len(&self) -> usize {
         1 + match self {
             Command::ShakeHands { .. } => 32,
+            Command::Connect {..} => 1 + 32,
             // Command::Ack(_) => {}
             Command::Heartbeat => 0
         }

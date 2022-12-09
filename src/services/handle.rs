@@ -93,6 +93,7 @@ impl ControlChannel {
         while let Ok(Some(mut data_stream)) = conn.accept_bidirectional_stream().await {
             info!("handshake");
             self.handshake(&mut data_stream).await;
+            self.handle_connection(&mut data_stream).await;
 
         }
         Ok(())
@@ -117,11 +118,17 @@ impl ControlChannel {
                     }
                     self.is_auth.wake();
                 }
+                Ok(())
             }
             _ => {
-                error!("认证失败")
+                error!("认证失败");
+                Err(anyhow!(HandleError::AuthenticationFailed))
             }
         }
+    }
+
+    pub async fn handle_connection(&self, stream: &mut BidirectionalStream) -> Result<()> {
+        let cmd = Command::read_from(stream).await;
         Ok(())
     }
 }
