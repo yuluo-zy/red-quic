@@ -77,9 +77,9 @@ impl ClientChannel {
         info!("[{:?}] 认证秘钥", self.digest.clone());
         
         let cmd = Command::ShakeHands {
-            digest: self.digest.clone()
+            digest: [2;32]
         };
-        cmd.write_to(&mut conn);
+        cmd.write_to(&mut conn).await.unwrap();
 
         // match conn.send(digest).await {
         //     Ok(_) => {
@@ -90,12 +90,12 @@ impl ClientChannel {
         //     }
         // }
         // 
-        // loop {
-        //     sleep(Duration::new(5,0)).await;
-        //     let digest = Bytes::from("hello");
-        //     info!("写入");
-        //     conn.send(digest).await.unwrap();
-        // }
+        loop {
+            sleep(Duration::new(5,0)).await;
+            let digest = Bytes::from("hello");
+            info!("写入");
+            conn.send(digest).await.unwrap();
+        }
 
     }
 }

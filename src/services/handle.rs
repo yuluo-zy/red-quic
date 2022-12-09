@@ -71,12 +71,13 @@ impl ControlChannel {
                                                conn: Handle,
                                                timeout: Duration) -> Result<()> {
         info!("认证函数");
-        let is_timeout = tokio::select! {
-           _=  self.is_auth.clone() => false,
-           _=  time::sleep(timeout) => true
+        let auth_success = tokio::select! {
+           is_auth =  self.is_auth.clone() => is_auth,
+           _=  time::sleep(timeout) => false
        };
         info!("认证完成");
-        if !is_timeout {
+        if auth_success {
+            info!("连接成功");
             Ok(())
         } else {
             let error = HandleError::AuthenticationTimeout;
@@ -89,15 +90,16 @@ impl ControlChannel {
     }
     pub async fn run(&self, mut conn: Connection) -> Result<()> {
         info!("run");
-        while let Ok(Some(data_stream)) = conn.accept_bidirectional_stream().await {
+        while let Ok(Some(mut data_stream)) = conn.accept_bidirectional_stream().await {
             info!("handshake");
-            self.handshake(data_stream).await;
+            self.handshake(&mut data_stream).await;
+
         }
         Ok(())
     }
 
-    pub async fn handshake(&self, mut stream: BidirectionalStream) -> Result<BidirectionalStream> {
-        let token = Command::read_from(&mut stream).await;
+    pub async fn handshake(&self, stream: &mut  BidirectionalStream) -> Result<()> {
+        let token = Command::read_from(stream).await;
         let addr = stream.connection().remote_addr();
         info!("handshakeing");
         info!("{:?}", token);
@@ -109,14 +111,18 @@ impl ControlChannel {
                     if self.digest.eq(&digest) {
                         info!("握手成功 {:?}", addr);
                         self.is_auth.set_auth();
-                        self.is_auth.wake();
+                    } else {
+                        error!("秘钥错误");
+                        self.is_auth.set_close();
                     }
+                    self.is_auth.wake();
                 }
             }
             _ => {
+                error!("认证失败")
             }
         }
-        Ok(stream)
+        Ok(())
     }
 }
 

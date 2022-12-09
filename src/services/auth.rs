@@ -60,12 +60,17 @@ impl IsAuth {
         }
     }
 
-    pub fn set_auth(&self) {
+    pub fn set_auth(&self,) {
         self.is_auth.store(true, Ordering::Release);
+    }
+    
+    pub fn set_close(&self) {
+        self.is_close.set_close();
     }
 
     pub fn wake(&self) {
         // 批量唤醒
+        info!("wake 唤醒");
         for item in self.waker.lock().drain(..) {
             item.wake()
         }
