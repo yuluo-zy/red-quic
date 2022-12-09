@@ -13,6 +13,7 @@ use s2n_quic::stream::BidirectionalStream;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{error, warn};
+use crate::protocol;
 
 #[derive(Error, Debug, Clone)]
 pub enum HandleError {
@@ -25,6 +26,9 @@ pub enum HandleError {
     #[error("bad command")]
     BadCommand,
 }
+
+pub const CONTROL_CONNECT: u8 = 0u8;
+pub const DATA_CONNECT: u8 = 1u8;
 
 impl From<HandleError> for S2N_Error {
     fn from(value: HandleError) -> Self {
@@ -47,15 +51,15 @@ impl From<HandleError> for S2N_Error {
 
 pub struct ControlChannel {
     is_auth: IsAuth,
-    digest: [u8;32]
+    digest: [u8; 32],
 }
 
 impl ControlChannel {
-    pub fn build(digest: [u8;32]) -> Self {
+    pub fn build(digest: [u8; 32]) -> Self {
         info!("创建端点转发服务");
         ControlChannel {
             is_auth: IsAuth::new(IsClosed::new()),
-            digest
+            digest,
         }
     }
     pub async fn handle(&mut self, conn: Connection) {
@@ -94,12 +98,11 @@ impl ControlChannel {
             info!("handshake");
             self.handshake(&mut data_stream).await;
             self.handle_connection(&mut data_stream).await;
-
         }
         Ok(())
     }
 
-    pub async fn handshake(&self, stream: &mut  BidirectionalStream) -> Result<()> {
+    pub async fn handshake(&self, stream: &mut BidirectionalStream) -> Result<()> {
         let token = Command::read_from(stream).await;
         let addr = stream.connection().remote_addr();
         info!("handshakeing");
@@ -128,8 +131,25 @@ impl ControlChannel {
     }
 
     pub async fn handle_connection(&self, stream: &mut BidirectionalStream) -> Result<()> {
-        let cmd = Command::read_from(stream).await;
-        Ok(())
+        let cmd = Command::read_from(stream).await?;
+        match cmd {
+            Command::Connect {
+                protocol_type,
+                service_digest
+            } => {
+                match protocol_type {
+                    CONTROL_CONNECT => {}
+                    DATA_CONNECT => {}
+                    _ => {
+                        todo!()
+                    }
+                }
+                Ok(())
+            }
+            _ => {
+                Err(anyhow!(HandleError::BadCommand))
+            }
+        }
     }
 }
 
