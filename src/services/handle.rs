@@ -151,6 +151,15 @@ impl ControlChannel {
             }
         }
     }
+
+    pub async fn do_control_channel(&self) -> Result<()> {
+        if self.is_auth.clone().await {
+
+        }
+        Ok(())
+    }
+
+
 }
 
 pub struct ControlChannelHandle {}
