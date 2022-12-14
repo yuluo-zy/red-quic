@@ -22,6 +22,12 @@ pub enum TransportType {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
+pub struct AgencyService {
+    pub transport_type: TransportType,
+    pub port: usize
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(rename = "type")]
@@ -37,7 +43,7 @@ pub struct Config {
 pub struct ClientServiceConfig {
     pub local_addr: String,
     pub name: String,
-    pub transport_type: TransportType,
+    pub service: Vec<AgencyService>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone)]
@@ -53,7 +59,7 @@ pub struct ClientConfig {
 #[serde(deny_unknown_fields)]
 pub struct ServerServiceConfig {
     pub name: String,
-    pub transport_type: TransportType,
+    pub service: Vec<AgencyService>
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]

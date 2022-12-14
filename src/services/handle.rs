@@ -1,19 +1,22 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use s2n_quic::Connection;
 use tracing::log::{info};
 use crate::services::auth::{IsAuth, IsClosed};
 use tokio::time;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
+use parking_lot::Mutex;
 use crate::protocol::Command;
-use tokio::sync::RwLock;
 use s2n_quic::application::Error as S2N_Error;
 use s2n_quic::connection::Handle;
 use s2n_quic::stream::BidirectionalStream;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{error, warn};
-use crate::protocol;
+
+
+pub type ControlChannelMap = HashMap<[u8; 32], ControlChannelHandle>;
 
 #[derive(Error, Debug, Clone)]
 pub enum HandleError {
@@ -52,14 +55,16 @@ impl From<HandleError> for S2N_Error {
 pub struct ControlChannel {
     is_auth: IsAuth,
     digest: [u8; 32],
+    service_channels: Arc<Mutex<ControlChannelMap>>,
 }
 
 impl ControlChannel {
-    pub fn build(digest: [u8; 32]) -> Self {
+    pub fn build(digest: [u8; 32], service_channel_map: Arc<Mutex<ControlChannelMap>>) -> Self {
         info!("创建端点转发服务");
         ControlChannel {
             is_auth: IsAuth::new(IsClosed::new()),
             digest,
+            service_channels: service_channel_map,
         }
     }
     pub async fn handle(&mut self, conn: Connection) {
@@ -96,8 +101,8 @@ impl ControlChannel {
         info!("run");
         while let Ok(Some(mut data_stream)) = conn.accept_bidirectional_stream().await {
             info!("handshake");
-            self.handshake(&mut data_stream).await;
-            self.handle_connection(&mut data_stream).await;
+            self.handshake(&mut data_stream).await?;
+            self.handle_connection(&mut data_stream).await?;
         }
         Ok(())
     }
@@ -138,7 +143,9 @@ impl ControlChannel {
                 service_digest
             } => {
                 match protocol_type {
-                    CONTROL_CONNECT => {}
+                    CONTROL_CONNECT => {
+                        self.do_control_channel(service_digest, stream).await?;
+                    }
                     DATA_CONNECT => {}
                     _ => {
                         todo!()
@@ -152,14 +159,28 @@ impl ControlChannel {
         }
     }
 
-    pub async fn do_control_channel(&self) -> Result<()> {
+    pub async fn do_control_channel(&self,
+                                    digest: [u8; 32],
+                                    stream: &mut BidirectionalStream) -> Result<()> {
         if self.is_auth.clone().await {
-
+            // 发送给客户端ack, 开始进行实际传输
+            let cmd = Command::ControlAck;
+            cmd.write_to(stream).await?;
+            {
+                let mut channel_map = self.service_channels.lock();
+                let handle = ControlChannelHandle::build()?;
+                channel_map.insert(digest, handle);
+            }
         }
         Ok(())
     }
-
-
 }
 
 pub struct ControlChannelHandle {}
+
+
+impl ControlChannelHandle {
+    pub fn build() -> Result<Self> {
+        Ok(Self {})
+    }
+}

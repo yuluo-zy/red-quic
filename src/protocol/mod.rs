@@ -14,6 +14,8 @@ pub enum Command {
         protocol_type: u8,
         service_digest: [u8; 32],
     },
+    ControlAck,
+    DataAck,
     // Ack(bool),
     Heartbeat,
 }
@@ -25,6 +27,8 @@ impl Command {
     const TYPE_CONTROL_HANDS: u8 = 0x01;
     const TYPE_CONTROL_CONNECT: u8 = 0x02;
     const TYPE_DATA_CONNECT: u8 = 0x03;
+    const TYPE_CONTROL_ACK: u8 = 0x04;
+    const TYPE_DATA_ACK: u8 = 0x05;
     // const TYPE_DATA_HANDS: u8 = 0x02;
     // const TYPE_AUTHENTICATE: u8 = 0x02;
 
@@ -51,6 +55,12 @@ impl Command {
                     protocol_type,
                     service_digest
                 })
+            }
+            Self::TYPE_CONTROL_ACK => {
+                Ok(Self::ControlAck)
+            }
+            Self::TYPE_DATA_ACK => {
+                Ok(Self::DataAck)
             }
             _ => {
                 error!("Unsupported Server Cmd");
@@ -79,15 +89,22 @@ impl Command {
                 buf.put_u8(*protocol_type);
                 buf.put_slice(service_digest);
             }
+            Command::ControlAck => {
+                buf.put_u8(Self::TYPE_CONTROL_ACK)
+            }
+            Command::DataAck => {
+                buf.put_u8(Self::TYPE_CONTROL_ACK)
+            }
         }
     }
 
     pub fn serialized_len(&self) -> usize {
         1 + match self {
-            Command::ShakeHands { .. } => 32,
-            Command::Connect {..} => 1 + 32,
-            // Command::Ack(_) => {}
-            Command::Heartbeat => 0
+            Self::ShakeHands { .. } => 32,
+            Self::Connect {..} => 1 + 32,
+            Self::Heartbeat
+            |  Self::ControlAck
+            |  Self::DataAck => 0,
         }
     }
 }

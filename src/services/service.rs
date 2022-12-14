@@ -1,21 +1,22 @@
-use anyhow::Result;
 use std::collections::HashMap;
+use anyhow::Result;
 use std::net::SocketAddr;
-use std::path::Path;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc};
+use parking_lot::Mutex;
 use s2n_quic::Server;
-use tracing::error;
 use tracing::info;
 
-use crate::config::{ServerServiceConfig, ServiceConfig};
-use crate::services::handle::{ControlChannel, ControlChannelHandle};
+use crate::config::{ServiceConfig};
+use crate::services::handle::{ControlChannel, ControlChannelMap};
 use crate::{CERT_PEM, KEY_PEM};
+
+
 
 pub struct Services {
     server: Server,
     config: Arc<ServiceConfig>,
-    // services: Arc<78<HashMap<Digest, ServerServiceConfig>>>,
-    // control_channels: Arc<RwLock<ControlChannelMap>>,
+    // services: Arc<<HashMap<Digest, ServerServiceConfig>>>,
+    service_channels: Arc<Mutex<ControlChannelMap>>,
 }
 
 impl Services {
@@ -32,10 +33,12 @@ impl Services {
                        KEY_PEM))?
             .with_io(socket_addr)?
             .start().unwrap();
+        let map = Arc::new(Mutex::new(HashMap::new()));
         info!("监听服务创建成功");
         Ok(Services {
             config,
             server,
+            service_channels: map
         })
     }
 
@@ -54,7 +57,10 @@ impl Services {
 
         while let Some(connection) = self.server.accept().await {
             info!("构建 server");
-            let mut control_channel = ControlChannel::build(self.config.default_token.clone().unwrap());
+            let mut control_channel = ControlChannel::build(
+                self.config.default_token.unwrap(),
+                self.service_channels.clone()
+            );
             control_channel.handle(connection).await;
         }
 
