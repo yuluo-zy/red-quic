@@ -16,6 +16,9 @@ pub enum Command {
     },
     ControlAck,
     DataAck,
+    TcpAcK,
+    UdpAck,
+    DateCreate,
     // Ack(bool),
     Heartbeat,
 }
@@ -29,6 +32,9 @@ impl Command {
     const TYPE_DATA_CONNECT: u8 = 0x03;
     const TYPE_CONTROL_ACK: u8 = 0x04;
     const TYPE_DATA_ACK: u8 = 0x05;
+    const TYPE_TCP_ACK: u8 = 0x06;
+    const TYPE_UDP_ACK: u8 = 0x07;
+    const TYPE_DATA_CREATE: u8 = 0x08;
     // const TYPE_DATA_HANDS: u8 = 0x02;
     // const TYPE_AUTHENTICATE: u8 = 0x02;
 
@@ -62,6 +68,15 @@ impl Command {
             Self::TYPE_DATA_ACK => {
                 Ok(Self::DataAck)
             }
+            Self::TYPE_TCP_ACK => {
+                Ok(Self::TcpAcK)
+            }
+            Self::TYPE_UDP_ACK => {
+                Ok(Self::UdpAck)
+            }
+            Self::TYPE_DATA_CREATE => {
+                Ok(Self::DateCreate)
+            }
             _ => {
                 error!("Unsupported Server Cmd");
                 return Err(anyhow!("Unsupported Server Cmd"));
@@ -73,6 +88,7 @@ impl Command {
         let mut buf = Vec::with_capacity(self.serialized_len());
         self.write_to_buf(&mut buf);
         w.write_all(&buf).await?;
+        w.flush().await?;
         Ok(())
     }
 
@@ -95,6 +111,15 @@ impl Command {
             Command::DataAck => {
                 buf.put_u8(Self::TYPE_CONTROL_ACK)
             }
+            Command::TcpAcK => {
+                buf.put_u8(Self::TYPE_TCP_ACK)
+            }
+            Command::UdpAck => {
+                buf.put_u8(Self::TYPE_UDP_ACK)
+            }
+            Command::DateCreate => {
+                buf.put_u8(Self::TYPE_DATA_CREATE);
+            }
         }
     }
 
@@ -103,8 +128,11 @@ impl Command {
             Self::ShakeHands { .. } => 32,
             Self::Connect {..} => 1 + 32,
             Self::Heartbeat
-            |  Self::ControlAck
-            |  Self::DataAck => 0,
+            | Self::ControlAck
+            | Self::DataAck
+            | Self::UdpAck
+            | Self::TcpAcK
+            | Self::DateCreate => 0,
         }
     }
 }

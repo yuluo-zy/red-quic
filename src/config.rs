@@ -59,7 +59,8 @@ pub struct ClientConfig {
 #[serde(deny_unknown_fields)]
 pub struct ServerServiceConfig {
     pub name: String,
-    pub service: Vec<AgencyService>
+    pub transport_type: TransportType,
+    pub port: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
