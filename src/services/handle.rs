@@ -182,7 +182,7 @@ impl ControlChannel {
             // 发送成功之后, 开始生成一个 句柄进行数据处理.
             {
                 let mut channel_map = self.service_channels.lock();
-                let handle = ControlChannelHandle::build(stream, service_config, HEART_BEATS).await?;
+                let handle = ControlChannelHandle::build(stream, service_config.clone(), HEART_BEATS).await?;
                 channel_map.insert(digest, handle);
             }
         }
@@ -200,7 +200,7 @@ pub struct ControlChannelHandle {
 impl ControlChannelHandle {
     pub async fn build(
         stream: BidirectionalStream,
-        service_config: &ServerServiceConfig,
+        service_config: ServerServiceConfig,
         heartbeats: u64,
     ) -> Result<Self> {
         let (shutdown_tx, shutdown_rx) = broadcast::channel::<bool>(1);
@@ -218,13 +218,14 @@ impl ControlChannelHandle {
             }
         }
         let shutdown_rx_clone = shutdown_tx.subscribe();
+        let bind_addr = service_config.port.clone();
         // 创建 连接池
         match service_config.transport_type {
             TransportType::Tcp => {
                 tokio::spawn(
                     async move {
                         if let Err(e) = run_tcp_pool(
-                            service_config.port.clone(),
+                            bind_addr,
                             data_ch_rx,
                             data_req_tx,
                             shutdown_rx_clone,
@@ -233,8 +234,7 @@ impl ControlChannelHandle {
                         {
                             error!("{:#}", e);
                         }
-                    }
-                        .instrument(Span::current()));
+                    });
             }
             TransportType::Udp => {}
         }
