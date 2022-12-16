@@ -7,7 +7,7 @@ use crate::services::auth::{IsAuth, IsClosed};
 use tokio::time;
 use anyhow::{anyhow, Context, Result};
 use parking_lot::Mutex;
-use crate::protocol::Command;
+use crate::protocol::{Command, ProtocolDigest};
 use s2n_quic::application::Error as S2N_Error;
 use s2n_quic::connection::Handle;
 use s2n_quic::stream::BidirectionalStream;
@@ -15,8 +15,8 @@ use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, Instrument, Span, warn};
-use crate::config::{ServerServiceConfig, TransportType};
+use tracing::{error, Instrument, instrument, Span, warn};
+use crate::config::{ServerServiceConfig, ServiceConfig, TransportType};
 
 
 pub type ControlChannelMap = HashMap<[u8; 32], ControlChannelHandle>;
@@ -62,14 +62,18 @@ pub struct ControlChannel {
     is_auth: IsAuth,
     digest: [u8; 32],
     service_channels: Arc<Mutex<ControlChannelMap>>,
+    config: Arc<HashMap<ProtocolDigest, ServerServiceConfig>>,
 }
 
 impl ControlChannel {
-    pub fn build(digest: [u8; 32], service_channel_map: Arc<Mutex<ControlChannelMap>>) -> Self {
+    pub fn build(digest: [u8; 32],
+                 config: Arc<HashMap<ProtocolDigest, ServerServiceConfig>>,
+                 service_channel_map: Arc<Mutex<ControlChannelMap>>) -> Self {
         info!("创建端点转发服务");
         ControlChannel {
             is_auth: IsAuth::new(IsClosed::new()),
             digest,
+            config,
             service_channels: service_channel_map,
         }
     }
@@ -108,7 +112,7 @@ impl ControlChannel {
         while let Ok(Some(mut data_stream)) = conn.accept_bidirectional_stream().await {
             info!("handshake");
             self.handshake(&mut data_stream).await?;
-            self.handle_connection(&mut data_stream).await?;
+            self.handle_connection(data_stream).await?;
         }
         Ok(())
     }
@@ -141,8 +145,8 @@ impl ControlChannel {
         }
     }
 
-    pub async fn handle_connection(&self, stream: &mut BidirectionalStream) -> Result<()> {
-        let cmd = Command::read_from(stream).await?;
+    pub async fn handle_connection(&self, mut stream: BidirectionalStream) -> Result<()> {
+        let cmd = Command::read_from(&mut stream).await?;
         match cmd {
             Command::Connect {
                 protocol_type,
@@ -167,14 +171,17 @@ impl ControlChannel {
 
     pub async fn do_control_channel(&self,
                                     digest: [u8; 32],
-                                    stream: &mut BidirectionalStream) -> Result<()> {
+                                    mut stream: BidirectionalStream) -> Result<()> {
         if self.is_auth.clone().await {
+            // 认证成功之后呢, 开始查找key对应的传递服务
+            let service_config = self.config.services.get(digest)?;
             // 发送给客户端ack, 开始进行实际传输
             let cmd = Command::ControlAck;
-            cmd.write_to(stream).await?;
+            cmd.write_to(&mut stream).await?;
+            // 发送成功之后, 开始生成一个 句柄进行数据处理.
             {
                 let mut channel_map = self.service_channels.lock();
-                let handle = ControlChannelHandle::build()?;
+                let handle = ControlChannelHandle::build(stream, self.)?;
                 channel_map.insert(digest, handle);
             }
         }
@@ -185,13 +192,14 @@ impl ControlChannel {
 pub struct ControlChannelHandle {
     _shutdown_tx: broadcast::Sender<bool>,
     data_ch_tx: mpsc::Sender<TcpStream>,
-    service_config: ServerServiceConfig,
+    service_config: &ServerServiceConfig,
+    stream: BidirectionalStream,
 }
 
 
 impl ControlChannelHandle {
     pub fn build(
-        stream: &mut BidirectionalStream,
+        mut stream: BidirectionalStream,
         service_config: ServerServiceConfig,
         heartbeats: u64,
     ) -> Result<Self> {
@@ -231,16 +239,21 @@ impl ControlChannelHandle {
             TransportType::Udp => {}
         }
 
+        Self::channel_run(stream,
+                          data_req_rx,
+                          shutdown_rx,
+                          heartbeats).await;
 
         Ok(Self {})
     }
 
     pub async fn channel_run(
-        conn: BidirectionalStream,
+        conn: &mut BidirectionalStream,
         mut data_req_rx: mpsc::UnboundedReceiver<bool>,
         mut shutdown_rx: broadcast::Receiver<bool>,
         heartbeats: u64,
     ) -> Result<()> {
+        let conn_mut = Arc::new(conn);
         tokio::spawn(async move {
             let data_cmd = Command::DateCreate;
             let heartbeat = Command::Heartbeat;
@@ -251,7 +264,8 @@ impl ControlChannelHandle {
                         match new_req {
                             Some(_) => {
                                 // 创建对应的数据通道
-                                if let Err(error) = data_cmd.write_to(&mut conn).await {
+                                let temp = conn_rev;
+                                if let Err(error) = data_cmd.write_to().await {
                                     error!("{:?}", error);
                                     break;
                                 }

@@ -5,6 +5,9 @@ use bytes::{BufMut, Bytes, BytesMut};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tracing::error;
 
+pub const HASH_WIDTH_IN_BYTES: usize = 32;
+pub type ProtocolDigest = [u8; HASH_WIDTH_IN_BYTES];
+
 #[derive(Debug)]
 pub enum Command {
     ShakeHands {
