@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc};
+use std::thread::sleep;
 use std::time::Duration;
 use s2n_quic::Connection;
 use tracing::log::{info};
@@ -12,14 +13,13 @@ use s2n_quic::application::Error as S2N_Error;
 use s2n_quic::connection::Handle;
 use s2n_quic::stream::BidirectionalStream;
 use thiserror::Error;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional};
+use tokio::io::{copy_bidirectional};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, Instrument, instrument, Span, warn};
+use tracing::{error, Instrument, Span, warn};
 use crate::config::{ServerServiceConfig, ServiceConfig, TransportType};
 
-
-pub type ControlChannelMap = HashMap<[u8; 32], ControlChannelHandle>;
+pub type ControlChannelMap = HashMap<ProtocolDigest, ControlChannelHandle>;
 
 #[derive(Error, Debug, Clone)]
 pub enum HandleError {
@@ -38,6 +38,7 @@ pub const DATA_CONNECT: u8 = 1u8;
 pub const CHAN_SIZE: usize = 2048;
 pub const TCP_SIZE: usize = 4;
 pub const UDP_SIZE: usize = 2;
+pub const HEART_BEATS: usize = 60;
 
 impl From<HandleError> for S2N_Error {
     fn from(value: HandleError) -> Self {
@@ -60,7 +61,7 @@ impl From<HandleError> for S2N_Error {
 
 pub struct ControlChannel {
     is_auth: IsAuth,
-    digest: [u8; 32],
+    digest: ProtocolDigest,
     service_channels: Arc<Mutex<ControlChannelMap>>,
     config: Arc<HashMap<ProtocolDigest, ServerServiceConfig>>,
 }
@@ -170,18 +171,18 @@ impl ControlChannel {
     }
 
     pub async fn do_control_channel(&self,
-                                    digest: [u8; 32],
+                                    digest: ProtocolDigest,
                                     mut stream: BidirectionalStream) -> Result<()> {
         if self.is_auth.clone().await {
             // 认证成功之后呢, 开始查找key对应的传递服务
-            let service_config = self.config.services.get(digest)?;
+            let service_config = self.config.get(&digest).unwrap();
             // 发送给客户端ack, 开始进行实际传输
             let cmd = Command::ControlAck;
             cmd.write_to(&mut stream).await?;
             // 发送成功之后, 开始生成一个 句柄进行数据处理.
             {
                 let mut channel_map = self.service_channels.lock();
-                let handle = ControlChannelHandle::build(stream, self.)?;
+                let handle = ControlChannelHandle::build(stream, service_config, HEART_BEATS).await?;
                 channel_map.insert(digest, handle);
             }
         }
@@ -192,16 +193,16 @@ impl ControlChannel {
 pub struct ControlChannelHandle {
     _shutdown_tx: broadcast::Sender<bool>,
     data_ch_tx: mpsc::Sender<TcpStream>,
-    service_config: &ServerServiceConfig,
+    service_config: ServerServiceConfig,
     stream: BidirectionalStream,
 }
 
 
 impl ControlChannelHandle {
-    pub fn build(
-        mut stream: BidirectionalStream,
-        service_config: ServerServiceConfig,
-        heartbeats: u64,
+    pub async fn build(
+        stream: BidirectionalStream,
+        service_config: &ServerServiceConfig,
+        heartbeats: usize,
     ) -> Result<Self> {
         let (shutdown_tx, shutdown_rx) = broadcast::channel::<bool>(1);
         let (data_ch_tx, mut data_ch_rx) = mpsc::channel(CHAN_SIZE * 2);
@@ -224,7 +225,7 @@ impl ControlChannelHandle {
                 tokio::spawn(
                     async move {
                         if let Err(e) = run_tcp_pool(
-                            service_config.port,
+                            service_config.port.clone(),
                             data_ch_rx,
                             data_req_tx,
                             shutdown_rx_clone,
@@ -239,33 +240,34 @@ impl ControlChannelHandle {
             TransportType::Udp => {}
         }
 
-        Self::channel_run(stream,
-                          data_req_rx,
-                          shutdown_rx,
-                          heartbeats).await;
-
-        Ok(Self {})
+        let handle = Self {
+            stream,
+            service_config: service_config.clone(),
+            data_ch_tx,
+            _shutdown_tx: shutdown_tx,
+        };
+        handle.channel_run(
+            data_req_rx,
+            shutdown_rx,
+            heartbeats,
+        ).await?;
+        Ok(handle)
     }
 
     pub async fn channel_run(
-        conn: &mut BidirectionalStream,
+        &self,
         mut data_req_rx: mpsc::UnboundedReceiver<bool>,
         mut shutdown_rx: broadcast::Receiver<bool>,
-        heartbeats: u64,
+        heartbeats: usize,
     ) -> Result<()> {
-        let conn_mut = Arc::new(conn);
         tokio::spawn(async move {
-            let data_cmd = Command::DateCreate;
-            let heartbeat = Command::Heartbeat;
-
             loop {
                 tokio::select! {
                     new_req = data_req_rx.recv() => {
                         match new_req {
                             Some(_) => {
                                 // 创建对应的数据通道
-                                let temp = conn_rev;
-                                if let Err(error) = data_cmd.write_to().await {
+                                if let Err(error) = self.data_start().await {
                                     error!("{:?}", error);
                                     break;
                                 }
@@ -276,7 +278,7 @@ impl ControlChannelHandle {
                         }
                     },
                        _ = time::sleep(Duration::from_secs(heartbeats)), if heartbeats != 0 => {
-                            if let Err(e) = heartbeat.write_to(&mut conn).await {
+                            if let Err(e) = self.heart_beats().await {
                                 error!("{:#}", e);
                                 break;
                             }
@@ -289,6 +291,16 @@ impl ControlChannelHandle {
             }
         }.instrument(Span::current()));
         Ok(())
+    }
+
+    async fn data_start(&mut self) -> Result<()> {
+        let data_cmd = Command::DateCreate;
+        data_cmd.write_to(&mut self.stream)
+    }
+
+    async fn heart_beats(&mut self) -> Result<()> {
+        let heartbeat = Command::Heartbeat;
+        heartbeat.write_to(&mut self.stream)
     }
 }
 
