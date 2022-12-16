@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::sync::{Arc};
-use std::thread::sleep;
 use std::time::Duration;
 use s2n_quic::Connection;
 use tracing::log::{info};
@@ -16,6 +15,7 @@ use thiserror::Error;
 use tokio::io::{copy_bidirectional};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc};
+use tokio::time::Sleep;
 use tracing::{error, Instrument, Span, warn};
 use crate::config::{ServerServiceConfig, ServiceConfig, TransportType};
 
@@ -38,7 +38,7 @@ pub const DATA_CONNECT: u8 = 1u8;
 pub const CHAN_SIZE: usize = 2048;
 pub const TCP_SIZE: usize = 4;
 pub const UDP_SIZE: usize = 2;
-pub const HEART_BEATS: usize = 60;
+pub const HEART_BEATS: u64 = 60;
 
 impl From<HandleError> for S2N_Error {
     fn from(value: HandleError) -> Self {
@@ -191,10 +191,9 @@ impl ControlChannel {
 }
 
 pub struct ControlChannelHandle {
-    _shutdown_tx: broadcast::Sender<bool>,
+    shutdown_tx: broadcast::Sender<bool>,
     data_ch_tx: mpsc::Sender<TcpStream>,
     service_config: ServerServiceConfig,
-    stream: BidirectionalStream,
 }
 
 
@@ -202,10 +201,10 @@ impl ControlChannelHandle {
     pub async fn build(
         stream: BidirectionalStream,
         service_config: &ServerServiceConfig,
-        heartbeats: usize,
+        heartbeats: u64,
     ) -> Result<Self> {
         let (shutdown_tx, shutdown_rx) = broadcast::channel::<bool>(1);
-        let (data_ch_tx, mut data_ch_rx) = mpsc::channel(CHAN_SIZE * 2);
+        let (data_ch_tx, data_ch_rx) = mpsc::channel(CHAN_SIZE * 2);
         let (data_req_tx, data_req_rx) = mpsc::unbounded_channel::<bool>();
 
         let pool_size = match service_config.transport_type {
@@ -240,30 +239,66 @@ impl ControlChannelHandle {
             TransportType::Udp => {}
         }
 
-        let handle = Self {
+        let mut ch = ControlChannelRunner::build(
             stream,
-            service_config: service_config.clone(),
-            data_ch_tx,
-            _shutdown_tx: shutdown_tx,
-        };
-        handle.channel_run(
             data_req_rx,
             shutdown_rx,
             heartbeats,
-        ).await?;
-        Ok(handle)
+        )?;
+
+        tokio::spawn(async move {
+            if let Err(e) = ch.run().await {
+                error!(" runner error {:?}", e);
+            }
+        });
+
+        Ok(Self {
+            service_config: service_config.clone(),
+            data_ch_tx,
+            shutdown_tx,
+        })
+    }
+}
+
+
+pub struct ControlChannelRunner {
+    stream: BidirectionalStream,
+    data_req_rx: mpsc::UnboundedReceiver<bool>,
+    shutdown_rx: broadcast::Receiver<bool>,
+    heartbeats: u64,
+}
+
+impl ControlChannelRunner {
+    async fn data_start(&mut self) -> Result<()> {
+        let data_cmd = Command::DateCreate;
+        data_cmd.write_to(&mut self.stream).await
     }
 
-    pub async fn channel_run(
-        &self,
-        mut data_req_rx: mpsc::UnboundedReceiver<bool>,
-        mut shutdown_rx: broadcast::Receiver<bool>,
-        heartbeats: usize,
+    async fn heart_beats(&mut self) -> Result<()> {
+        let heartbeat = Command::Heartbeat;
+        heartbeat.write_to(&mut self.stream).await
+    }
+
+    pub fn build(
+        stream: BidirectionalStream,
+        data_req_rx: mpsc::UnboundedReceiver<bool>,
+        shutdown_rx: broadcast::Receiver<bool>,
+        heartbeats: u64,
+    ) -> Result<Self> {
+        Ok(Self {
+            stream,
+            data_req_rx,
+            shutdown_rx,
+            heartbeats,
+        })
+    }
+
+    pub async fn run(
+        &mut self,
     ) -> Result<()> {
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    new_req = data_req_rx.recv() => {
+        loop {
+            tokio::select! {
+                    new_req = self.data_req_rx.recv() => {
                         match new_req {
                             Some(_) => {
                                 // 创建对应的数据通道
@@ -277,32 +312,22 @@ impl ControlChannelHandle {
                             }
                         }
                     },
-                       _ = time::sleep(Duration::from_secs(heartbeats)), if heartbeats != 0 => {
+                       _ = time::sleep(Duration::from_secs(self.heartbeats)), if self.heartbeats != 0 => {
                             if let Err(e) = self.heart_beats().await {
                                 error!("{:#}", e);
                                 break;
                             }
                 }
-                    _ = shutdown_rx.recv() => {
+                    _ = self.shutdown_rx.recv() => {
                         // 接收到停止信号, 退出监听
                         break;
                     }
                 }
-            }
-        }.instrument(Span::current()));
+        }
         Ok(())
     }
-
-    async fn data_start(&mut self) -> Result<()> {
-        let data_cmd = Command::DateCreate;
-        data_cmd.write_to(&mut self.stream)
-    }
-
-    async fn heart_beats(&mut self) -> Result<()> {
-        let heartbeat = Command::Heartbeat;
-        heartbeat.write_to(&mut self.stream)
-    }
 }
+
 
 pub async fn run_tcp_pool(
     bind_addr: String,
