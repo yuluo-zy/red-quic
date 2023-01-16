@@ -27,9 +27,9 @@ impl Clients {
         //     self.service_handles.insert(item.0.clone(), item.1.clone())
         // }
         // 创建 链接通道然后开始认证
-        info!("开始创建");
+        info!("clients 开始运行");
         let mut control_channel = ClientChannel::build(self.config.clone()).await.unwrap();
-        control_channel.run().await;
+        control_channel.run().await?;
         // tokio::spawn(async move {
         //     while let Err(e) = control_channel.run().await.with_context(|| "失败情动"){
         //         // 条件判断是否要重新启动

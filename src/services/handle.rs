@@ -181,6 +181,7 @@ impl ControlChannel {
             cmd.write_to(&mut stream).await?;
             // 发送成功之后, 开始生成一个 句柄进行数据处理.
             {
+                // TODO 如果是多个服务连接在一块呢
                 let mut channel_map = self.service_channels.lock();
                 let handle = ControlChannelHandle::build(stream, service_config.clone(), HEART_BEATS).await?;
                 channel_map.insert(digest, handle);
@@ -345,7 +346,8 @@ pub async fn run_tcp_pool(
 
     'pool: while let Some(mut visitor) = req_connect.recv().await {
         loop {
-            if let Some(mut stream) = data_ch_rx.recv().await {
+            if let Some(mut stream)
+                = data_ch_rx.recv().await {
                 // 接受 服务器远端访问和  内网连接
                 if cmd.write_to(&mut stream).await.is_ok() {
                     // 开启双向复制
@@ -355,7 +357,7 @@ pub async fn run_tcp_pool(
                     });
                     break;
                 } else if data_req_tx.send(true).is_err() {
-                    // 这里说明 没有可以使用的数据通道, 所以重新创建一个数据通道
+                    // 这里说明 写入操作没有成功, 所以重新创建一个数据通道
                     break 'pool;
                 }
             } else {

@@ -43,7 +43,8 @@ pub struct Config {
 pub struct ClientServiceConfig {
     pub local_addr: String,
     pub name: String,
-    pub service: Vec<AgencyService>,
+    pub token: Option<[u8;32]>,
+    pub service: AgencyService,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone)]
