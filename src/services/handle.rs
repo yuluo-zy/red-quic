@@ -7,17 +7,18 @@ use crate::services::auth::{IsAuth, IsClosed};
 use tokio::time;
 use anyhow::{anyhow, Context, Result};
 use parking_lot::Mutex;
-use crate::protocol::{Command, ProtocolDigest};
+use rand::RngCore;
+use crate::protocol::{Command, HASH_WIDTH_IN_BYTES, ProtocolDigest};
 use s2n_quic::application::Error as S2N_Error;
 use s2n_quic::connection::Handle;
 use s2n_quic::stream::BidirectionalStream;
+use ring::digest::{digest, SHA256};
 use thiserror::Error;
 use tokio::io::{copy_bidirectional};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc};
-use tokio::time::Sleep;
-use tracing::{error, Instrument, Span, warn};
-use crate::config::{ServerServiceConfig, ServiceConfig, TransportType};
+use tracing::{error, Span, warn};
+use crate::config::{ServerServiceConfig, TransportType};
 
 pub type ControlChannelMap = HashMap<ProtocolDigest, ControlChannelHandle>;
 
@@ -43,9 +44,6 @@ pub const HEART_BEATS: u64 = 60;
 impl From<HandleError> for S2N_Error {
     fn from(value: HandleError) -> Self {
         match value {
-            // HandleError::Io(_) => {
-            //     S2N_Error::from(1u8)
-            // }
             HandleError::AuthenticationFailed => {
                 S2N_Error::from(2u8)
             }
@@ -119,10 +117,55 @@ impl ControlChannel {
     }
 
     pub async fn handshake(&self, stream: &mut BidirectionalStream) -> Result<()> {
-        let token = Command::read_from(stream).await;
-        let addr = stream.connection().remote_addr();
-        info!("handshakeing");
-        info!("{:?}", token);
+
+        // 接收 hello
+        let service_digest = match Command::read_from( stream).await.with_context(|| anyhow!("command hello is error"))? {
+            Command::Hello { service } => service,
+            _ => { return Err(anyhow!("command hello is error"));}
+        };
+
+        // 生成 对应的 hello的 token
+        let mut nonce = vec![0u8; HASH_WIDTH_IN_BYTES];
+        rand::thread_rng().fill_bytes(&mut nonce);
+        let cmd = Command::AckToken {
+            digest: ProtocolDigest::try_from(nonce.clone())?
+        };
+        cmd.write_to(stream).await?;
+
+
+
+        // 获取 token
+        let addr = stream.connection().remote_addr()?;
+        let token =  match Command::read_from(stream).await.with_context(|| anyhow!("command token is error"))?{
+            Command::ShakeHands { digest } => digest,
+            _ => {
+                return Err(anyhow!("Failed to obtain the secret key"));
+            }
+        };
+
+
+        // 查询是否存在 service
+        let service_config = match  self.config.get(&service_digest){
+            None => {
+                let cmd = Command::AckServiceNotFind;
+                cmd.write_to(stream);
+                return Err(anyhow!("service not find"))
+            }
+            Some(v) => v
+        };
+
+        info!("service {} start now", service_config.name);
+
+        // 开始校验token
+        let mut concat = Vec::from(service_config.token.as_ref().unwrap().as_bytes());
+        concat.append(&mut nonce);
+        let mut hasher = digest(&SHA256, &concat);
+
+
+
+
+
+
         match token {
             Ok(cmd) => {
                 if let Command::ShakeHands {

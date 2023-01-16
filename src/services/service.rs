@@ -3,15 +3,15 @@ use anyhow::Result;
 use std::net::SocketAddr;
 use std::sync::{Arc};
 use parking_lot::Mutex;
+use ring::digest::{digest, SHA256};
 use s2n_quic::Server;
-use sha2::Digest;
 use tracing::info;
+
 
 use crate::config::{ServerServiceConfig, ServiceConfig};
 use crate::services::handle::{ControlChannel, ControlChannelMap};
 use crate::{CERT_PEM, KEY_PEM};
 use crate::protocol::ProtocolDigest;
-use crate::utils::digest;
 
 /// 服务端程序内容
 pub struct Services {
@@ -64,7 +64,7 @@ impl Services {
 pub fn generate_service(config: &ServiceConfig) -> HashMap<ProtocolDigest, ServerServiceConfig> {
     let mut map = HashMap::new();
     for item in &config.services {
-        map.insert(digest(item.0.as_bytes()), (*item.1).clone());
+        map.insert(digest( &SHA256,item.0.as_bytes()).clone_into(), (*item.1).clone());
     }
     map
 }

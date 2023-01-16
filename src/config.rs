@@ -62,6 +62,7 @@ pub struct ServerServiceConfig {
     pub name: String,
     pub transport_type: TransportType,
     pub port: String,
+    pub token: Option<[u8;32]>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]

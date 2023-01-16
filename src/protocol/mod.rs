@@ -6,13 +6,25 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tracing::error;
 
 pub const HASH_WIDTH_IN_BYTES: usize = 32;
+
 pub type ProtocolDigest = [u8; HASH_WIDTH_IN_BYTES];
 
 #[derive(Debug)]
 pub enum Command {
-    ShakeHands {
-        digest: [u8; 32],
+    // 认证握手阶段
+    Hello {
+        service: ProtocolDigest,
     },
+    AckToken {
+        digest: ProtocolDigest
+    },
+    ShakeHands {
+        digest: ProtocolDigest,
+    },
+    AckAuthFailed,
+    AckServiceNotFind,
+    AckOk,
+    // 连接传输阶段
     Connect {
         protocol_type: u8,
         service_digest: [u8; 32],
@@ -22,22 +34,26 @@ pub enum Command {
     TcpAcK,
     UdpAck,
     DateCreate,
-    // Ack(bool),
     Heartbeat,
 }
 
 impl Command {
     // 添加命令解析长度
-    // pub fn Re
     const TYPE_HEART_BEAT: u8 = 0x00;
-    const TYPE_CONTROL_HANDS: u8 = 0x01;
-    const TYPE_CONTROL_CONNECT: u8 = 0x02;
-    const TYPE_DATA_CONNECT: u8 = 0x03;
-    const TYPE_CONTROL_ACK: u8 = 0x04;
-    const TYPE_DATA_ACK: u8 = 0x05;
-    const TYPE_TCP_ACK: u8 = 0x06;
-    const TYPE_UDP_ACK: u8 = 0x07;
-    const TYPE_DATA_CREATE: u8 = 0x08;
+    const TYPE_HELLO: u8 = 0x01;
+    const TYPE_ACK_TOKEN: u8 = 0x02;
+    const TYPE_SHAKE_HANDS: u8 = 0x03;
+    const TYPE_ACK_AUTH_FAILED: u8 = 0x04;
+    const TYPE_ACK_SERVICE_NOT_FIND: u8 = 0x05;
+    const TYPE_ACK_OK: u8 = 0x06;
+    // const TYPE_CONTROL_HANDS: u8 = 0x01;
+    // const TYPE_CONTROL_CONNECT: u8 = 0x02;
+    // const TYPE_DATA_CONNECT: u8 = 0x03;
+    // const TYPE_CONTROL_ACK: u8 = 0x04;
+    // const TYPE_DATA_ACK: u8 = 0x05;
+    // const TYPE_TCP_ACK: u8 = 0x06;
+    // const TYPE_UDP_ACK: u8 = 0x07;
+    // const TYPE_DATA_CREATE: u8 = 0x08;
     // const TYPE_DATA_HANDS: u8 = 0x02;
     // const TYPE_AUTHENTICATE: u8 = 0x02;
 
@@ -49,37 +65,72 @@ impl Command {
     {
         let cmd = r.read_u8().await?;
         match cmd {
-            Self::TYPE_CONTROL_HANDS => {
+            Self::TYPE_HEART_BEAT => {
+                Ok(Self::Heartbeat)
+            }
+            Self::TYPE_HELLO => {
+                let mut digest = [0; 32];
+                r.read_exact(&mut digest).await?;
+                Ok(Self::Hello {
+                    service: digest,
+                })
+            }
+            Self::TYPE_ACK_TOKEN => {
+                let mut digest = [0; 32];
+                r.read_exact(&mut digest).await?;
+                Ok(Self::AckToken {
+                    digest,
+                })
+            }
+            Self::TYPE_SHAKE_HANDS => {
                 let mut digest = [0; 32];
                 r.read_exact(&mut digest).await?;
                 Ok(Self::ShakeHands {
                     digest,
                 })
             }
-            Self::TYPE_CONTROL_CONNECT =>{
-                let protocol_type = r.read_u8().await?;
-                let mut  service_digest = [0;32];
-                r.read_exact(&mut service_digest).await?;
-                Ok( Self::Connect {
-                    protocol_type,
-                    service_digest
-                })
+            Self::TYPE_ACK_AUTH_FAILED => {
+                Ok(Self::AckAuthFailed)
             }
-            Self::TYPE_CONTROL_ACK => {
-                Ok(Self::ControlAck)
+            Self::TYPE_ACK_SERVICE_NOT_FIND => {
+                Ok(Self::AckServiceNotFind)
             }
-            Self::TYPE_DATA_ACK => {
-                Ok(Self::DataAck)
+            Self::TYPE_ACK_OK => {
+                Ok(Self::AckOk)
             }
-            Self::TYPE_TCP_ACK => {
-                Ok(Self::TcpAcK)
-            }
-            Self::TYPE_UDP_ACK => {
-                Ok(Self::UdpAck)
-            }
-            Self::TYPE_DATA_CREATE => {
-                Ok(Self::DateCreate)
-            }
+
+
+            // Self::TYPE_CONTROL_HANDS => {
+            //     let mut digest = [0; 32];
+            //     r.read_exact(&mut digest).await?;
+            //     Ok(Self::ShakeHands {
+            //         digest,
+            //     })
+            // }
+            // Self::TYPE_CONTROL_CONNECT =>{
+            //     let protocol_type = r.read_u8().await?;
+            //     let mut  service_digest = [0;32];
+            //     r.read_exact(&mut service_digest).await?;
+            //     Ok( Self::Connect {
+            //         protocol_type,
+            //         service_digest
+            //     })
+            // }
+            // Self::TYPE_CONTROL_ACK => {
+            //     Ok(Self::ControlAck)
+            // }
+            // Self::TYPE_DATA_ACK => {
+            //     Ok(Self::DataAck)
+            // }
+            // Self::TYPE_TCP_ACK => {
+            //     Ok(Self::TcpAcK)
+            // }
+            // Self::TYPE_UDP_ACK => {
+            //     Ok(Self::UdpAck)
+            // }
+            // Self::TYPE_DATA_CREATE => {
+            //     Ok(Self::DateCreate)
+            // }
             _ => {
                 error!("Unsupported Server Cmd");
                 return Err(anyhow!("Unsupported Server Cmd"));
@@ -97,45 +148,70 @@ impl Command {
 
     fn write_to_buf<B: BufMut>(&self, buf: &mut B) {
         match self {
-            Command::ShakeHands { digest } => {
-                buf.put_u8(Self::TYPE_CONTROL_HANDS);
-                buf.put_slice(digest);
-            }
             Command::Heartbeat => {
                 buf.put_u8(Self::TYPE_HEART_BEAT)
+            }
+            Command::Hello { service } => {
+                buf.put_u8(Self::TYPE_HELLO);
+                buf.put_slice(service);
+            }
+            Command::ShakeHands { digest } => {
+                buf.put_u8(Self::TYPE_SHAKE_HANDS);
+                buf.put_slice(digest);
+            }
+            Command::AckToken { digest } => {
+                buf.put_u8(Self::TYPE_ACK_TOKEN);
+                buf.put_slice(digest);
+            }
+            Command::AckAuthFailed => {
+                buf.put_u8(Self::TYPE_ACK_AUTH_FAILED)
+            }
+            Command::AckServiceNotFind => {
+                buf.put_u8(Self::TYPE_ACK_SERVICE_NOT_FIND)
+            }
+            Command::AckOk => {
+                buf.put_u8(Self::TYPE_ACK_OK)
             }
             Command::Connect { service_digest, protocol_type } => {
                 buf.put_u8(*protocol_type);
                 buf.put_slice(service_digest);
             }
-            Command::ControlAck => {
-                buf.put_u8(Self::TYPE_CONTROL_ACK)
-            }
-            Command::DataAck => {
-                buf.put_u8(Self::TYPE_CONTROL_ACK)
-            }
-            Command::TcpAcK => {
-                buf.put_u8(Self::TYPE_TCP_ACK)
-            }
-            Command::UdpAck => {
-                buf.put_u8(Self::TYPE_UDP_ACK)
-            }
-            Command::DateCreate => {
-                buf.put_u8(Self::TYPE_DATA_CREATE);
+            // Command::ControlAck => {
+            //     buf.put_u8(Self::TYPE_CONTROL_ACK)
+            // }
+            // Command::DataAck => {
+            //     buf.put_u8(Self::TYPE_CONTROL_ACK)
+            // }
+            // Command::TcpAcK => {
+            //     buf.put_u8(Self::TYPE_TCP_ACK)
+            // }
+            // Command::UdpAck => {
+            //     buf.put_u8(Self::TYPE_UDP_ACK)
+            // }
+            // Command::DateCreate => {
+            //     buf.put_u8(Self::TYPE_DATA_CREATE);
+            // }
+            _ => {
+                todo!()
             }
         }
     }
 
-    pub fn serialized_len(&self) -> usize {
+    fn serialized_len(&self) -> usize {
         1 + match self {
-            Self::ShakeHands { .. } => 32,
-            Self::Connect {..} => 1 + 32,
-            Self::Heartbeat
-            | Self::ControlAck
-            | Self::DataAck
-            | Self::UdpAck
-            | Self::TcpAcK
-            | Self::DateCreate => 0,
+            Command::ShakeHands { .. }
+            | Command::AckToken { .. }
+            | Command::Hello { .. } => 32,
+            Command::Connect { .. } => 1 + 32,
+            Command::Heartbeat
+            | Command::ControlAck
+            | Command::DataAck
+            | Command::UdpAck
+            | Command::TcpAcK
+            | Command::DateCreate
+            | Command::AckAuthFailed
+            | Command::AckServiceNotFind
+            | Command::AckOk => 0,
         }
     }
 }

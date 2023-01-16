@@ -1,7 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use std::time::Duration;
 use tokio::sync::oneshot;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use s2n_quic::{Client, Connection};
 use s2n_quic::client::Connect;
@@ -77,7 +77,8 @@ impl ClientChannel {
         info!("尝试连接远程");
         let mut connection = client.connect(connect).await?;
         connection.keep_alive(true)?;
-        Self::new(connection, config.token?,  shut_down_rx).await
+        let token = config.token.ok_or(anyhow!("token is option"))?;
+        Self::new(connection, token,  shut_down_rx).await
     }
 
     async fn new(conn: Connection, digest: [u8;32],  shut_down_rx: oneshot::Receiver<u8>) -> Result<Self> {
