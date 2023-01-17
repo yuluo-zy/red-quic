@@ -45,7 +45,7 @@ impl Services {
     }
 
     // 开始运行
-    pub async fn run(&mut self, mut shutdown_rx: tokio::sync::broadcast::Receiver<bool>) {
+    pub async fn run(&mut self, mut shutdown_rx: tokio::sync::broadcast::Receiver<bool>) -> Result<()>{
 
         while let Some(connection) = self.server.accept().await {
             info!("构建 server");
@@ -55,7 +55,8 @@ impl Services {
             );
             control_channel.handle(connection).await;
         }
-
+    
+        Ok(())
     }
 }
 

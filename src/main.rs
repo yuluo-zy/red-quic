@@ -6,12 +6,10 @@ use red_quic::client::run_client;
 use red_quic::config::{ClientConfig, ServiceConfig, ServiceType};
 use red_quic::services::run_server;
 use clap::Parser;
-use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-
     #[arg(short, long)]
     service: String,
 }
@@ -21,7 +19,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     // info!("{args}");
     console_subscriber::init();
-    tracing::info!("console_subscriber enabled");
+    info!("console_subscriber enabled");
     info!("{0}", args.service);
     // 设置参数解析
 
@@ -67,12 +65,12 @@ async fn main() -> Result<()> {
 
     match config.service_type {
         ServiceType::Client => {
-            run_client(config.client_config.unwrap(),all_shutdown_rx).await;
+            run_client(config.client_config.unwrap(),all_shutdown_rx).await?;
         }
         ServiceType::Service => {
             run_server(config.service_config.unwrap(),
                        all_shutdown_rx
-            ).await;
+            ).await?;
         }
     }
     Ok(())
