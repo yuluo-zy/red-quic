@@ -19,7 +19,7 @@ pub struct Services {
     server: Server,
     /// 配置
     config: Arc<ServiceConfig>,
-    /// 每个转发服务的配置Map
+    /// 每个转发服务的配置Map 服务名称 与 对应的 服务器配置
     services_config: Arc<HashMap<ProtocolDigest, ServerServiceConfig>>,
     /// 转发服务的控制句柄
     service_channels: Arc<Mutex<ControlChannelMap>>,
@@ -47,12 +47,9 @@ impl Services {
     // 开始运行
     pub async fn run(&mut self, mut shutdown_rx: tokio::sync::broadcast::Receiver<bool>) {
 
-        let token = self.config.default_token.as_ref().unwrap().clone();
-
         while let Some(connection) = self.server.accept().await {
             info!("构建 server");
             let mut control_channel = ControlChannel::build(
-                &token,
                 self.services_config.clone(),
                 self.service_channels.clone()
             );

@@ -59,20 +59,16 @@ impl From<HandleError> for S2N_Error {
 
 pub struct ControlChannel {
     is_auth: IsAuth,
-    digest: ProtocolDigest,
     service_channels: Arc<Mutex<ControlChannelMap>>,
     config: Arc<HashMap<ProtocolDigest, ServerServiceConfig>>,
 }
 
 impl ControlChannel {
-    pub fn build(digest: &String,
-                 config: Arc<HashMap<ProtocolDigest, ServerServiceConfig>>,
+    pub fn build(config: Arc<HashMap<ProtocolDigest, ServerServiceConfig>>,
                  service_channel_map: Arc<Mutex<ControlChannelMap>>) -> Self {
         info!("创建端点转发服务");
-        let digest = utils_digest(digest.as_bytes());
         ControlChannel {
             is_auth: IsAuth::new(IsClosed::new()),
-            digest,
             config,
             service_channels: service_channel_map,
         }
@@ -134,9 +130,8 @@ impl ControlChannel {
         cmd.write_to(stream).await?;
 
         // 获取 token
-        let addr = stream.connection().remote_addr()?;
         let token =  match Command::read_from(stream).await.with_context(|| anyhow!("command token is error"))?{
-            Command::ShakeHands { digest } => digest,
+            Command::ShakeHands { digest } => digest, // 这个digest是 token + rand
             _ => {
                 return Err(anyhow!("Failed to obtain the secret key"));
             }
@@ -158,33 +153,21 @@ impl ControlChannel {
         // 开始校验token
         let mut concat = Vec::from(service_config.token.as_ref().unwrap().as_bytes());
         concat.append(&mut nonce);
-        let mut hasher = utils_digest(&concat);
 
-
-
-
-
-
-        match token {
-            Ok(cmd) => {
-                if let Command::ShakeHands {
-                    digest
-                } = cmd {
-                    if self.digest.eq(&digest) {
-                        info!("握手成功 {:?}", addr);
-                        self.is_auth.set_auth();
-                    } else {
-                        error!("秘钥错误");
-                        self.is_auth.set_close();
-                    }
-                    self.is_auth.wake();
-                }
-                Ok(())
-            }
-            _ => {
-                error!("认证失败");
-                Err(anyhow!(HandleError::AuthenticationFailed))
-            }
+        if utils_digest(&concat) != token {
+            let cmd = Command::AckAuthFailed;
+            cmd.write_to(stream).await?;
+            error!("秘钥错误");
+            self.is_auth.set_close();
+            self.is_auth.wake();
+            return Err(anyhow!("认证失败"))
+        } else {
+            info!("握手成功 {:?}", stream.connection().remote_addr()?);
+            self.is_auth.set_auth();
+            let cmd = Command::AckOk;
+            cmd.write_to(stream).await?;
+            self.is_auth.wake();
+            Ok(())
         }
     }
 
