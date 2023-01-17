@@ -21,22 +21,27 @@ const KEEPALIVE_INTERVAL: Duration = Duration::new(8, 0);
 
 
 pub struct ClientChannelHandle {
-    shutdown_tx: oneshot::Sender<u8>,
+    shutdown_tx: oneshot::Sender<bool>,
 }
 
 impl ClientChannelHandle {
-    pub async fn run(&mut self,
-                     remote_addr: &String,
-                     server_config: &ClientServiceConfig) -> ClientChannelHandle {
+    pub async fn build(remote_addr: &String, server_config: &ClientServiceConfig) -> Result<ClientChannelHandle> {
         info!("start service {}", server_config.name);
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         // 创建 client 通道
-        Self {
+        let mut runner = ClientChannel::build(server_config, remote_addr, shutdown_rx).await?;
+        tokio::spawn(async move {
+            runner.run().await
+        });
+
+        Ok(Self {
             shutdown_tx
-        }
+        })
     }
     pub fn shutdown(self) {
-        self.shutdown_tx.send(0u8).expect("TODO: panic message");
+        if let Err(e) = self.shutdown_tx.send(true) {
+            error!("close service error")
+        }
     }
 }
 

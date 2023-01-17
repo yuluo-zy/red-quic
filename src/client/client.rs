@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
+use tokio::sync::broadcast;
 use tracing::{Instrument, Span};
 use tracing::log::{info, Level, log};
 
@@ -9,7 +10,7 @@ use crate::config::ClientConfig;
 
 pub struct Clients {
     config: ClientConfig,
-    service_handles: HashMap<String, ClientChannelHandle>
+    service_handles: HashMap<String, ClientChannelHandle>,
 }
 
 impl Clients {
@@ -20,25 +21,22 @@ impl Clients {
         })
     }
 
-    pub async fn run(&mut self, mut shutdown_rx: tokio::sync::broadcast::Receiver<bool>) -> Result<()> {
+    pub async fn run(&mut self, mut shutdown_rx: broadcast::Receiver<bool>) -> Result<()> {
 
         // 循环创建对应的controlChannelHandler
-        // for item in &self.config.services {
-        //     self.service_handles.insert(item.0.clone(), item.1.clone())
-        // }
+        for (name, handle_config) in &self.config.services {
+            let handle = ClientChannelHandle::build( &self.config.remote_addr, handle_config).await?;
+            self.service_handles.insert(name.clone(), handle);
+        }
         // 创建 链接通道然后开始认证
         info!("clients 开始运行");
-        // let mut control_channel = ClientChannel::build(self.config.clone()).await?;
-        // control_channel.run().await?;
-        // tokio::spawn(async move {
-        //     while let Err(e) = control_channel.run().await.with_context(|| "失败情动"){
-        //         // 条件判断是否要重新启动
-        //     }.instrument(Span::current())
-        // });
-       if let Ok(res) = shutdown_rx.recv().await {
-           log!(Level::Info,"shutdown now {}", res);
-           log!(Level::Info,"shutdown now");
-       }
+        if let Ok(res) = shutdown_rx.recv().await {
+            log!(Level::Info,"shutdown now {}", res);
+            for (name, handle) in self.service_handles.drain() {
+                handle.shutdown();
+            };
+            log!(Level::Info,"shutdown now");
+        }
         Ok(())
     }
 }

@@ -19,8 +19,6 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-
-
     // info!("{args}");
     console_subscriber::init();
     tracing::info!("console_subscriber enabled");
@@ -47,7 +45,7 @@ async fn main() -> Result<()> {
            name: "test".to_string(),
            service_config: Some(ServiceConfig {
                bind_addr: "127.0.0.1:7799".to_string(),
-               default_token: Some([1;32]),
+               default_token: Some("test".to_string()),
                services: Default::default()
            }),
            client_config: None
@@ -59,7 +57,7 @@ async fn main() -> Result<()> {
            service_config: None,
            client_config: Some(ClientConfig{
                remote_addr: "127.0.0.1:7799".to_string(),
-               default_token: Some([1;32]),
+               default_token: Some("test".to_string()),
                services: Default::default(),
                heartbeat_timeout: 0
            })
