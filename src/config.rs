@@ -43,7 +43,7 @@ pub struct Config {
 pub struct ClientServiceConfig {
     pub local_addr: String,
     pub name: String,
-    pub token: Option<[u8;32]>,
+    pub token: Option<String>,
     pub service: AgencyService,
 }
 
@@ -51,7 +51,7 @@ pub struct ClientServiceConfig {
 #[serde(deny_unknown_fields)]
 pub struct ClientConfig {
     pub remote_addr: String,
-    pub default_token: Option<[u8;32]>,
+    pub default_token: Option<String>,
     pub services: HashMap<String, ClientServiceConfig>,
     pub heartbeat_timeout: u64,
 }
@@ -62,13 +62,13 @@ pub struct ServerServiceConfig {
     pub name: String,
     pub transport_type: TransportType,
     pub port: String,
-    pub token: Option<[u8;32]>,
+    pub token: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ServiceConfig {
     pub bind_addr: String,
-    pub default_token: Option<[u8;32]>,
+    pub default_token: Option<String>,
     pub services: HashMap<String, ServerServiceConfig>,
 }

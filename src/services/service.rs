@@ -3,7 +3,7 @@ use anyhow::Result;
 use std::net::SocketAddr;
 use std::sync::{Arc};
 use parking_lot::Mutex;
-use ring::digest::{digest, SHA256};
+use crate::utils::digest;
 use s2n_quic::Server;
 use tracing::info;
 
@@ -47,10 +47,12 @@ impl Services {
     // 开始运行
     pub async fn run(&mut self, mut shutdown_rx: tokio::sync::broadcast::Receiver<bool>) {
 
+        let token = self.config.default_token.as_ref().unwrap().clone();
+
         while let Some(connection) = self.server.accept().await {
             info!("构建 server");
             let mut control_channel = ControlChannel::build(
-                self.config.default_token.unwrap(),
+                &token,
                 self.services_config.clone(),
                 self.service_channels.clone()
             );
@@ -64,7 +66,7 @@ impl Services {
 pub fn generate_service(config: &ServiceConfig) -> HashMap<ProtocolDigest, ServerServiceConfig> {
     let mut map = HashMap::new();
     for item in &config.services {
-        map.insert(digest( &SHA256,item.0.as_bytes()).clone_into(), (*item.1).clone());
+        map.insert(digest(item.0.as_bytes()), (*item.1).clone());
     }
     map
 }

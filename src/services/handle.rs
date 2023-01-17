@@ -12,13 +12,13 @@ use crate::protocol::{Command, HASH_WIDTH_IN_BYTES, ProtocolDigest};
 use s2n_quic::application::Error as S2N_Error;
 use s2n_quic::connection::Handle;
 use s2n_quic::stream::BidirectionalStream;
-use ring::digest::{digest, SHA256};
 use thiserror::Error;
 use tokio::io::{copy_bidirectional};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, Span, warn};
+use tracing::{error};
 use crate::config::{ServerServiceConfig, TransportType};
+use crate::utils::digest as utils_digest;
 
 pub type ControlChannelMap = HashMap<ProtocolDigest, ControlChannelHandle>;
 
@@ -65,10 +65,11 @@ pub struct ControlChannel {
 }
 
 impl ControlChannel {
-    pub fn build(digest: [u8; 32],
+    pub fn build(digest: &String,
                  config: Arc<HashMap<ProtocolDigest, ServerServiceConfig>>,
                  service_channel_map: Arc<Mutex<ControlChannelMap>>) -> Self {
         info!("创建端点转发服务");
+        let digest = utils_digest(digest.as_bytes());
         ControlChannel {
             is_auth: IsAuth::new(IsClosed::new()),
             digest,
@@ -128,11 +129,9 @@ impl ControlChannel {
         let mut nonce = vec![0u8; HASH_WIDTH_IN_BYTES];
         rand::thread_rng().fill_bytes(&mut nonce);
         let cmd = Command::AckToken {
-            digest: ProtocolDigest::try_from(nonce.clone())?
+            digest: nonce.clone().try_into().unwrap()
         };
         cmd.write_to(stream).await?;
-
-
 
         // 获取 token
         let addr = stream.connection().remote_addr()?;
@@ -159,7 +158,7 @@ impl ControlChannel {
         // 开始校验token
         let mut concat = Vec::from(service_config.token.as_ref().unwrap().as_bytes());
         concat.append(&mut nonce);
-        let mut hasher = digest(&SHA256, &concat);
+        let mut hasher = utils_digest(&concat);
 
 
 
