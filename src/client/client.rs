@@ -20,7 +20,7 @@ impl Clients {
         })
     }
 
-    pub async fn run(&mut self, mut shutdown_rx: tokio::sync::broadcast::Receiver<bool>) {
+    pub async fn run(&mut self, mut shutdown_rx: tokio::sync::broadcast::Receiver<bool>) -> Result<()> {
 
         // 循环创建对应的controlChannelHandler
         // for item in &self.config.services {
@@ -28,8 +28,8 @@ impl Clients {
         // }
         // 创建 链接通道然后开始认证
         info!("clients 开始运行");
-        let mut control_channel = ClientChannel::build(self.config.clone()).await.unwrap();
-        control_channel.run().await?;
+        // let mut control_channel = ClientChannel::build(self.config.clone()).await?;
+        // control_channel.run().await?;
         // tokio::spawn(async move {
         //     while let Err(e) = control_channel.run().await.with_context(|| "失败情动"){
         //         // 条件判断是否要重新启动
@@ -39,6 +39,6 @@ impl Clients {
            log!(Level::Info,"shutdown now {}", res);
            log!(Level::Info,"shutdown now");
        }
-
+        Ok(())
     }
 }
