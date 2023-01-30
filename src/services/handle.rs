@@ -116,9 +116,9 @@ impl ControlChannel {
     pub async fn handshake(&self, stream: &mut BidirectionalStream) -> Result<()> {
 
         // 接收 hello
-        let service_digest = match Command::read_from( stream).await.with_context(|| anyhow!("command hello is error"))? {
+        let service_digest = match Command::read_from(stream).await.with_context(|| anyhow!("command hello is error"))? {
             Command::Hello { service } => service,
-            _ => { return Err(anyhow!("command hello is error"));}
+            _ => { return Err(anyhow!("command hello is error")); }
         };
 
         // 生成 对应的 hello的 token
@@ -130,7 +130,7 @@ impl ControlChannel {
         cmd.write_to(stream).await?;
 
         // 获取 token
-        let token =  match Command::read_from(stream).await.with_context(|| anyhow!("command token is error"))?{
+        let token = match Command::read_from(stream).await.with_context(|| anyhow!("command token is error"))? {
             Command::ShakeHands { digest } => digest, // 这个digest是 token + rand
             _ => {
                 return Err(anyhow!("Failed to obtain the secret key"));
@@ -139,11 +139,11 @@ impl ControlChannel {
 
 
         // 查询是否存在 service
-        let service_config = match  self.config.get(&service_digest){
+        let service_config = match self.config.get(&service_digest) {
             None => {
                 let cmd = Command::AckServiceNotFind;
-                cmd.write_to(stream);
-                return Err(anyhow!("service not find"))
+                cmd.write_to(stream).await?;
+                return Err(anyhow!("service not find"));
             }
             Some(v) => v
         };
@@ -160,7 +160,7 @@ impl ControlChannel {
             error!("秘钥错误");
             self.is_auth.set_close();
             self.is_auth.wake();
-            return Err(anyhow!("认证失败"))
+            Err(anyhow!("认证失败"))
         } else {
             info!("握手成功 {:?}", stream.connection().remote_addr()?);
             self.is_auth.set_auth();
@@ -205,10 +205,10 @@ impl ControlChannel {
             let cmd = Command::ControlAck;
             cmd.write_to(&mut stream).await?;
             // 发送成功之后, 开始生成一个 句柄进行数据处理.
+
+            let handle = ControlChannelHandle::build(stream, service_config.clone(), HEART_BEATS).await?;
             {
-                // TODO 如果是多个服务连接在一块呢
                 let mut channel_map = self.service_channels.lock();
-                let handle = ControlChannelHandle::build(stream, service_config.clone(), HEART_BEATS).await?;
                 channel_map.insert(digest, handle);
             }
         }

@@ -68,19 +68,6 @@ impl ClientChannel {
         let remote_addr: SocketAddr = remote_addr.parse()?;
         let connect = Connect::new(remote_addr).with_server_name("localhost");
 
-        // 创建 代理地址 并设置参数:
-        // let tcp_stream: TcpStream = TcpStream::connect(remote_addr).with_context(|| format!("Failed to connect to {}", &remote_addr)).await?;
-        // tcp_stream.set_nodelay(true)?;
-        //
-        // let s = SockRef::from(&tcp_stream);
-        // let keepalive = TcpKeepalive::new()
-        //     .with_time(KEEPALIVE_DURATION)
-        //     .with_interval(KEEPALIVE_INTERVAL);
-        //
-        // debug!("Set TCP keepalive {:?} {:?}",KEEPALIVE_DURATION,KEEPALIVE_INTERVAL);
-        //
-        // s.set_tcp_keepalive(&keepalive)?;
-
         info!("尝试连接远程");
         let mut connection = client.connect(connect).await?;
         connection.keep_alive(true)?;

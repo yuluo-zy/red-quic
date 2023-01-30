@@ -1,4 +1,3 @@
-use std::env;
 use anyhow::{Context, Result};
 use tracing::{error, info};
 use red_quic::{ Config};
