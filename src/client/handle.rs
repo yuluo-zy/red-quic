@@ -137,6 +137,28 @@ impl ClientChannel {
 
         info!("正式开始转发服务");
 
+        // todo: we should try some times
+        loop {
+            match Command::read_from(stream) {
+                Command::ControlAck => {
+                    info!("start control channel");
+
+                    tokio::spawn(async move {
+                        // create a data channel
+                    })
+                }
+
+                Command::Heartbeat => (),
+
+                _ => {
+                    error!("transport protocol error");
+                    return Err(anyhow!("transport protocol error"))
+                }
+            }
+        }
+
+
+
         // match conn.send(digest).await {
         //     Ok(_) => {
         //         info!("[relay] [connection] [authentication]")

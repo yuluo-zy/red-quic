@@ -182,7 +182,9 @@ impl ControlChannel {
                     CONTROL_CONNECT => {
                         self.do_control_channel(service_digest, stream).await?;
                     }
-                    DATA_CONNECT => {}
+                    DATA_CONNECT => {
+
+                    }
                     _ => {
                         todo!()
                     }
