@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use tracing::{error, info};
 use red_quic::{ Config};
 use red_quic::client::run_client;
-use red_quic::config::{ClientConfig, ServiceConfig, ServiceType};
+use red_quic::config::{ClientConfig, ServiceConfig,ServiceType};
 use red_quic::services::run_server;
 use clap::Parser;
 
@@ -17,7 +17,7 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
     // info!("{args}");
-    console_subscriber::init();
+    Console_subscriber::init();
     info!("console_subscriber enabled");
     info!("{0}", args.service);
     // 设置参数解析
@@ -36,8 +36,8 @@ async fn main() -> Result<()> {
     });
     let config ;
    if args.service == "service".to_string() {
-
-       config = Config {
+       log!()
+       Config = Config {
            service_type: Default::default(),
            name: "test".to_string(),
            service_config: Some(ServiceConfig {

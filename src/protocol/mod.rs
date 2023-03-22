@@ -23,11 +23,6 @@ pub enum Command {
     AckAuthFailed,
     AckServiceNotFind,
     AckOk,
-    // 连接传输阶段
-    Connect {
-        protocol_type: u8,
-        service_digest: [u8; 32],
-    },
     ControlAck,
     DataAck,
     TcpAcK,

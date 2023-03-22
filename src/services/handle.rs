@@ -173,6 +173,8 @@ impl ControlChannel {
 
     pub async fn handle_connection(&self, mut stream: BidirectionalStream) -> Result<()> {
         let cmd = Command::read_from(&mut stream).await?;
+
+        // todo: 修改为根据自身的 self 配置来实现
         match cmd {
             Command::Connect {
                 protocol_type,

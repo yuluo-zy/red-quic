@@ -102,7 +102,7 @@ impl ClientChannel {
 
         // 发送hello
         let cmd = Command::Hello {
-            service: self.digest
+            service: self.digest // 服务名称
         };
         cmd.write_to(stream).await?;
 
