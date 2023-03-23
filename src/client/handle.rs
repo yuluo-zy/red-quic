@@ -8,6 +8,8 @@ use s2n_quic::{Client, Connection};
 use s2n_quic::client::Connect;
 use s2n_quic::stream::BidirectionalStream;
 use socket2::{SockRef, TcpKeepalive};
+use tokio::io::copy_bidirectional;
+use tokio::net::TcpStream;
 use tokio::time;
 use tokio::time::sleep;
 use tracing::{debug, error, info};
@@ -16,6 +18,7 @@ use tracing::log::Level::Debug;
 use crate::config::{ClientConfig, ClientServiceConfig};
 use crate::{CERT_PEM};
 use crate::protocol::{Command, ProtocolDigest};
+use crate::services::handle::TCP_SIZE;
 use crate::utils::digest as utils_digest;
 
 const KEEPALIVE_DURATION: Duration = Duration::new(20, 0);
@@ -174,4 +177,11 @@ impl ClientChannel {
 
         Ok(())
     }
+}
+
+async fn data_channel_tcp(mut stream: BidirectionalStream, local_host: &str) ->Result<()>{
+    info!("建立tcp转发连接");
+    let mut local = TcpStream::connect(local_host).await.with_context(|| format!("Failed to connect to {}", local_host))?;
+    copy_bidirectional(&mut stream, &mut local).await?;
+    Ok(())
 }
