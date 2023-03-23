@@ -11,7 +11,7 @@ pub type ProtocolDigest = [u8; HASH_WIDTH_IN_BYTES];
 #[derive(Debug)]
 pub enum Command {
     // 认证握手阶段
-    Hello {
+    ControlHello {
         service: ProtocolDigest,
     },
     AckToken {
@@ -20,15 +20,13 @@ pub enum Command {
     ShakeHands {
         digest: ProtocolDigest,
     },
-    AckAuthFailed,
-    AckServiceNotFind,
+    // AckAuthFailed,
+    // AckServiceNotFind,
     AckOk,
-    ControlAck,
+    // ControlAck,
     DataAck,
-    TcpAcK,
-    UdpAck,
-    DateCreate,
     Heartbeat,
+    DataHello,
 }
 
 impl Command {

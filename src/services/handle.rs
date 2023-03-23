@@ -206,8 +206,8 @@ impl ControlChannel {
             // 认证成功之后呢, 开始查找key对应的传递服务
             let service_config = self.config.get(&digest).unwrap();
             // 发送给客户端ack, 开始进行实际传输
-            let cmd = Command::ControlAck;
-            cmd.write_to(&mut stream).await?;
+            // let cmd = Command::ControlAck;
+            // cmd.write_to(&mut stream).await?;
             // 发送成功之后, 开始生成一个 句柄进行数据处理.
 
             let handle = ControlChannelHandle::build(stream, service_config.clone(), HEART_BEATS).await?;
