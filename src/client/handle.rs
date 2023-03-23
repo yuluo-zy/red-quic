@@ -3,10 +3,12 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 use anyhow::{anyhow, Context, Result};
 use bytes::Bytes;
+use clap::command;
 use s2n_quic::{Client, Connection};
 use s2n_quic::client::Connect;
 use s2n_quic::stream::BidirectionalStream;
 use socket2::{SockRef, TcpKeepalive};
+use tokio::time;
 use tokio::time::sleep;
 use tracing::{debug, error, info};
 use tracing::log::{log, warn};
@@ -18,7 +20,6 @@ use crate::utils::digest as utils_digest;
 
 const KEEPALIVE_DURATION: Duration = Duration::new(20, 0);
 const KEEPALIVE_INTERVAL: Duration = Duration::new(8, 0);
-
 
 pub struct ClientChannelHandle {
     shutdown_tx: oneshot::Sender<bool>,
@@ -48,6 +49,7 @@ impl ClientChannelHandle {
 
 pub struct ClientChannel {
     pub(crate) digest: ProtocolDigest,
+    // 服务名称
     pub(crate) shutdown_rx: oneshot::Receiver<bool>,
     pub(crate) transport: Connection,
     pub(crate) token: ProtocolDigest,
@@ -75,7 +77,7 @@ impl ClientChannel {
         let digest = utils_digest(config.name.as_bytes());
         let token = utils_digest(config.token.as_ref().unwrap().as_bytes());
 
-        Self::new(connection, digest, token,  shutdown_rx).await
+        Self::new(connection, digest, token, shutdown_rx).await
     }
 
     async fn new(conn: Connection, digest: ProtocolDigest, token: ProtocolDigest, shutdown_rx: oneshot::Receiver<bool>) -> Result<Self> {
@@ -95,7 +97,7 @@ impl ClientChannel {
         self.send_authentication(&mut conn).await?;
         Ok(())
     }
-    async fn send_authentication(&self,  stream: &mut BidirectionalStream) -> Result<()> {
+    async fn send_authentication(&self, stream: &mut BidirectionalStream) -> Result<()> {
         info!("开始进行认证操作");
 
         info!("[{:?}] 认证秘钥", &self.digest);
@@ -107,9 +109,9 @@ impl ClientChannel {
         cmd.write_to(stream).await?;
 
         // 读取 ack 中的 随机秘钥
-        let service_digest = match Command::read_from( stream).await.with_context(|| anyhow!("command ack_token is error"))? {
+        let service_digest = match Command::read_from(stream).await.with_context(|| anyhow!("command ack_token is error"))? {
             Command::AckToken { digest } => digest,
-            _ => { return Err(anyhow!("command ack_token is error"));}
+            _ => { return Err(anyhow!("command ack_token is error")); }
         };
 
         // 发送认证
@@ -119,7 +121,7 @@ impl ClientChannel {
         let cmd = Command::ShakeHands {
             digest: utils_digest(&concat)
         };
-        cmd.write_to( stream).await.unwrap();
+        cmd.write_to(stream).await.unwrap();
 
         match Command::read_from(stream).await? {
             Command::AckOk => {
@@ -134,18 +136,24 @@ impl ClientChannel {
                 return Err(anyhow!("ack auth filed"));
             }
         }
+        Ok(())
+    }
 
+    async fn transmission(&self, stream: &mut BidirectionalStream) -> Result<()> {
         info!("正式开始转发服务");
 
         // todo: we should try some times
         loop {
-            match Command::read_from(stream) {
-                Command::ControlAck => {
+            tokio::select! {
+                Ok(command) = Command::read_from(stream) => {
+                    match command {
+                         Command::ControlAck => {
                     info!("start control channel");
 
-                    tokio::spawn(async move {
-                        // create a data channel
-                    })
+                        // tokio::spawn(async move {
+                        //     // create a data channel
+                        //    Ok(())
+                        // })
                 }
 
                 Command::Heartbeat => (),
@@ -153,26 +161,17 @@ impl ClientChannel {
                 _ => {
                     error!("transport protocol error");
                     return Err(anyhow!("transport protocol error"))
+                }}
+
+                },
+
+                _ = time::sleep(Duration::from_secs(self.heartbeat_timeout)), if self.heartbeat_timeout > 0 => {
+                    return Err(anyhow!("heartbeat timeout!"))
                 }
+
             }
         }
 
-
-
-        // match conn.send(digest).await {
-        //     Ok(_) => {
-        //         info!("[relay] [connection] [authentication]")
-        //     }
-        //     Err(err) => {
-        //         warn!("[relay] [connection] [authentication] {err}")
-        //     }
-        // }
-        //
-        loop {
-            sleep(Duration::new(5, 0)).await;
-            let digest = Bytes::from("hello");
-            info!("写入");
-        //     conn.send(digest).await.unwrap();
-        }
+        Ok(())
     }
 }
