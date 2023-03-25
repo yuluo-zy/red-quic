@@ -8,7 +8,7 @@ use s2n_quic::Server;
 use tracing::info;
 
 
-use crate::config::{ServerServiceConfig, ServiceConfig};
+use crate::config::{ServiceConfig};
 use crate::services::handle::{ControlChannel, ControlChannelMap};
 use crate::{CERT_PEM, KEY_PEM};
 use crate::protocol::ProtocolDigest;
@@ -19,8 +19,6 @@ pub struct Services {
     server: Server,
     /// 配置
     config: Arc<ServiceConfig>,
-    /// 每个转发服务的配置Map 服务名称 与 对应的 服务器配置
-    services_config: Arc<HashMap<ProtocolDigest, ServerServiceConfig>>,
     /// 转发服务的控制句柄
     service_channels: Arc<Mutex<ControlChannelMap>>,
 }
@@ -28,8 +26,7 @@ pub struct Services {
 impl Services {
     pub async fn init(config: ServiceConfig) -> Result<Services> {
         let _config = Arc::new(config);
-        let service_map = generate_service(&_config);
-        let socket_addr = _config.bind_addr.parse::<SocketAddr>().unwrap();
+        let socket_addr = _config.bind_addr.parse::<SocketAddr>()?;
         let server = Server::builder()
             .with_tls((CERT_PEM, KEY_PEM))?
             .with_io(socket_addr)?
@@ -40,7 +37,6 @@ impl Services {
             config: _config,
             server,
             service_channels: map,
-            services_config: Arc::new(service_map),
         })
     }
 
@@ -50,21 +46,11 @@ impl Services {
         while let Some(connection) = self.server.accept().await {
             info!("构建 server");
             let mut control_channel = ControlChannel::build(
-                self.services_config.clone(),
                 self.service_channels.clone()
             );
-            control_channel.handle(connection).await;
+            control_channel.run(connection).await?;
         }
     
         Ok(())
     }
-}
-
-/// 生成 服务列表
-pub fn generate_service(config: &ServiceConfig) -> HashMap<ProtocolDigest, ServerServiceConfig> {
-    let mut map = HashMap::new();
-    for item in &config.services {
-        map.insert(digest(item.0.as_bytes()), (*item.1).clone());
-    }
-    map
 }

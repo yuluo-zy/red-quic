@@ -43,7 +43,6 @@ pub struct Config {
 pub struct ClientServiceConfig {
     pub local_addr: String,
     pub name: String,
-    pub token: Option<String>,
     pub service: AgencyService,
 }
 
@@ -51,24 +50,26 @@ pub struct ClientServiceConfig {
 #[serde(deny_unknown_fields)]
 pub struct ClientConfig {
     pub remote_addr: String,
-    pub default_token: Option<String>,
     pub services: HashMap<String, ClientServiceConfig>,
     pub heartbeat_timeout: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
-#[serde(deny_unknown_fields)]
-pub struct ServerServiceConfig {
-    pub name: String,
-    pub transport_type: TransportType,
-    pub port: String,
-    pub token: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ServiceConfig {
     pub bind_addr: String,
-    pub default_token: Option<String>,
-    pub services: HashMap<String, ServerServiceConfig>,
+}
+
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ErrorAckType {
+    CommandError
+}
+
+impl From<ErrorAckType> for u32 {
+    fn from(value: ErrorAckType) -> Self {
+        match value {
+            ErrorAckType::CommandError => 0 as u32
+        }
+    }
 }
