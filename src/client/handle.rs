@@ -1,7 +1,8 @@
+use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::oneshot;
+use tokio::sync::{broadcast, oneshot};
 use anyhow::{anyhow, Context, Result};
 use s2n_quic::{Client, Connection};
 use s2n_quic::client::Connect;
@@ -23,46 +24,20 @@ use crate::utils::digest as utils_digest;
 const KEEPALIVE_DURATION: Duration = Duration::new(20, 0);
 const KEEPALIVE_INTERVAL: Duration = Duration::new(8, 0);
 
-pub struct ClientChannelHandle {
-    config: Arc<ClientConfig>,
-    shutdown_tx: oneshot::Sender<bool>,
-}
-
-impl ClientChannelHandle {
-    pub async fn build(config: Arc<ClientConfig>) -> Result<ClientChannelHandle> {
-        info!("start service {:?}", &config.remote_addr);
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
-        // 创建 client 通道
-        let mut runner = ClientChannel::build(server_config, remote_addr, shutdown_rx).await?;
-        tokio::spawn(async move {
-            runner.run().await
-        });
-
-        Ok(Self {
-            config,
-            shutdown_tx
-        })
-    }
-    pub fn shutdown(self) {
-        if let Err(e) = self.shutdown_tx.send(true) {
-            error!("close service error")
-        }
-    }
-}
-
-
 pub struct ClientChannel {
     pub(crate) digest: ProtocolDigest,
     // 服务名称
-    pub(crate) shutdown_rx: oneshot::Receiver<bool>,
+    pub(crate) shutdown_rx: broadcast::Receiver<bool>,
     pub(crate) transport: Connection,
     pub(crate) heartbeat_timeout: u64,             // Application layer heartbeat timeout in secs
 }
 
 impl ClientChannel {
-    pub async fn build(config: &ClientServiceConfig,
-                       remote_addr: &String,
-                       shutdown_rx: oneshot::Receiver<bool>) -> Result<Self> {
+    pub async fn build(
+        remote_addr: &String,
+        server_name: &String,
+        shutdown_rx: broadcast::Receiver<bool>,
+    ) -> Result<Self> {
         // 创建 connect
         let client = Client::builder()
             .with_tls(CERT_PEM)?
@@ -77,12 +52,12 @@ impl ClientChannel {
         let mut connection = client.connect(connect).await?;
         connection.keep_alive(true)?;
         // let token = config.token.as_ref().ok_or(anyhow!("token is option"))?.clone();
-        let digest = utils_digest(config.name.as_bytes());
+        let digest = utils_digest(server_name.as_bytes());
 
         Self::new(connection, digest, shutdown_rx).await
     }
 
-    async fn new(conn: Connection, digest: ProtocolDigest, shutdown_rx: oneshot::Receiver<bool>) -> Result<Self> {
+    async fn new(conn: Connection, digest: ProtocolDigest, shutdown_rx: broadcast::Receiver<bool>) -> Result<Self> {
         info!("创建连接");
         let conn = Self {
             digest,
@@ -92,10 +67,11 @@ impl ClientChannel {
         };
         Ok(conn)
     }
-    pub async fn run(&mut self) -> Result<()> {
+    pub async fn run(&mut self, config: &HashMap<String, ClientServiceConfig>) -> Result<()> {
         // 开始写认证链接并创建相关数据通路的代码
         let mut conn = self.transport.handle().open_bidirectional_stream().await.unwrap();
         self.send_authentication(&mut conn).await?;
+        self.transmission(&mut conn, config).await?;
         Ok(())
     }
     async fn send_authentication(&self, stream: &mut BidirectionalStream) -> Result<()> {
@@ -113,7 +89,7 @@ impl ClientChannel {
             Command::AckOk => {
                 info!("认证成功, 开始传输")
             }
-            Command::ErrorAck { error_type} => {
+            Command::ErrorAck { error_type } => {
                 // todo: error info output
                 error!("传输服务未查询到, 建立传输失败");
                 return Err(anyhow!("service not find"));
@@ -126,15 +102,23 @@ impl ClientChannel {
         Ok(())
     }
 
-    async fn transmission(&self, stream: &mut BidirectionalStream) -> Result<()> {
+    async fn transmission(&self, stream: &mut BidirectionalStream, config: &HashMap<String, ClientServiceConfig>) -> Result<()> {
         info!("正式开始转发服务");
 
+        for (key, value) in config.iter() {
+           let cmd = Command::DataConnect {
+                // todo: add udp 1
+                transmission_type: 0,
+                port: value.service.port as u64,
+            };
+            cmd.write_to(stream).await?;
+        }
         // todo: we should try some times
         loop {
             tokio::select! {
-                Ok(command) = Command::read_from(stream) => {
+                Ok(command) = Command::read_from( stream) => {
                     match command {
-                         Command::ControlAck => {
+                         Command::ErrorAck {error_type} => {
                     info!("start control channel");
 
                         // tokio::spawn(async move {
@@ -163,7 +147,7 @@ impl ClientChannel {
     }
 }
 
-async fn data_channel_tcp(mut stream: BidirectionalStream, local_host: &str) ->Result<()>{
+async fn data_channel_tcp(mut stream: BidirectionalStream, local_host: &str) -> Result<()> {
     info!("建立tcp转发连接");
     let mut local = TcpStream::connect(local_host).await.with_context(|| format!("Failed to connect to {}", local_host))?;
     copy_bidirectional(&mut stream, &mut local).await?;

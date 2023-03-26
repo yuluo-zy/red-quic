@@ -17,7 +17,7 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
     // info!("{args}");
-    Console_subscriber::init();
+    // Console_subscriber::init();
     info!("console_subscriber enabled");
     info!("{0}", args.service);
     // 设置参数解析
@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
     });
     let config ;
    if args.service == "service".to_string() {
-       Config = Config {
+       config = Config {
            service_type: Default::default(),
            name: "test".to_string(),
            service_config: Some(ServiceConfig {
@@ -50,6 +50,7 @@ async fn main() -> Result<()> {
            name: "test".to_string(),
            service_config: None,
            client_config: Some(ClientConfig{
+               service_name: "".to_string(),
                remote_addr: "127.0.0.1:7799".to_string(),
                services: Default::default(),
                heartbeat_timeout: 0

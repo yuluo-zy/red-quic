@@ -126,20 +126,23 @@ impl ControlChannelHandle {
                                     1 => {
                                         // udp connect
                                     }
+                                    _ => {}
                                 }
                         } ,
-                        Command::Heartbeat => ()
+                        Command::Heartbeat => (),
+                            
+                            _ => {
+
+                            }
                     }
                 },
 
-                _ =  time::sleep(Duration::from_secs(heartbeats)), if heartbeats > 0 => {
-                        return Err(anyhow!("heartbeat timeout!"))
-                    }
+                // _ =  time::sleep(Duration::from_secs(heartbeats)), if heartbeats > 0 => {
+                //         return  Err(anyhow!("heartbeat timeout!"))
+                //     }
             }
-
             }
         });
-
 
 
         // let pool_size = match service_config.transport_type {
