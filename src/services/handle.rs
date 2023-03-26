@@ -24,8 +24,8 @@ pub type ControlChannelMap = HashMap<ProtocolDigest, ControlChannelHandle>;
 
 #[derive(Error, Debug, Clone)]
 pub enum HandleError {
-    #[error(transparent)]
-    Io(#[from] IoError),
+    // #[error(transparent)]
+    // Io(#[from] IoError),
     #[error("authentication failed")]
     AuthenticationFailed,
     #[error("authentication timeout")]
@@ -53,7 +53,7 @@ impl From<HandleError> for S2N_Error {
             HandleError::BadCommand => {
                 S2N_Error::from(4u8)
             }
-            _ => {}
+            // _ => {}
         }
     }
 }
@@ -112,12 +112,21 @@ impl ControlChannelHandle {
         let (shutdown_tx, shutdown_rx) = broadcast::channel::<bool>(1);
         let (data_ch_tx, data_ch_rx) = mpsc::channel(CHAN_SIZE * 2);
         // let (data_req_tx, data_req_rx) = mpsc::unbounded_channel::<bool>();
-        loop {
-            tokio::select! {
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
                  Ok(command) = Command::read_from(&mut stream) => {
                     match command {
                         Command::DataConnect { transmission_type, port} => {
                             // 通过 客户端传递的指令进行连接池创建和端口监听
+                                match transmission_type {
+                                    0 => {
+                                        // tcp connect
+                                    },
+                                    1 => {
+                                        // udp connect
+                                    }
+                                }
                         } ,
                         Command::Heartbeat => ()
                     }
@@ -128,7 +137,9 @@ impl ControlChannelHandle {
                     }
             }
 
-        }
+            }
+        });
+
 
 
         // let pool_size = match service_config.transport_type {
@@ -170,11 +181,11 @@ impl ControlChannelHandle {
         //     heartbeats,
         // )?;
 
-        tokio::spawn(async move {
-            if let Err(e) = ch.run().await {
-                error!(" runner error {:?}", e);
-            }
-        });
+        // tokio::spawn(async move {
+        //     if let Err(e) = ch.run().await {
+        //         error!(" runner error {:?}", e);
+        //     }
+        // });
 
         Ok(Self {
             data_ch_tx,
@@ -264,29 +275,29 @@ pub async fn run_tcp_pool(
         shutdown_rx,
     ).await?;
 
-    let cmd = Command::TcpAcK;
-
-    'pool: while let Some(mut visitor) = req_connect.recv().await {
-        loop {
-            if let Some(mut stream)
-                = data_ch_rx.recv().await {
-                // 接受 服务器远端访问和  内网连接
-                if cmd.write_to(&mut stream).await.is_ok() {
-                    // 开启双向复制
-                    info!("开启转发{:?} : {:?}", &visitor.peer_addr()?.clone(), &stream.peer_addr()?.clone());
-                    tokio::spawn(async move {
-                        let _ = copy_bidirectional(&mut visitor, &mut stream);
-                    });
-                    break;
-                } else if data_req_tx.send(true).is_err() {
-                    // 这里说明 写入操作没有成功, 所以重新创建一个数据通道
-                    break 'pool;
-                }
-            } else {
-                break 'pool;
-            }
-        }
-    }
+    // let cmd = Command::TcpAcK;
+    //
+    // 'pool: while let Some(mut visitor) = req_connect.recv().await {
+    //     loop {
+    //         if let Some(mut stream)
+    //             = data_ch_rx.recv().await {
+    //             // 接受 服务器远端访问和  内网连接
+    //             if cmd.write_to(&mut stream).await.is_ok() {
+    //                 // 开启双向复制
+    //                 info!("开启转发{:?} : {:?}", &visitor.peer_addr()?.clone(), &stream.peer_addr()?.clone());
+    //                 tokio::spawn(async move {
+    //                     let _ = copy_bidirectional(&mut visitor, &mut stream);
+    //                 });
+    //                 break;
+    //             } else if data_req_tx.send(true).is_err() {
+    //                 // 这里说明 写入操作没有成功, 所以重新创建一个数据通道
+    //                 break 'pool;
+    //             }
+    //         } else {
+    //             break 'pool;
+    //         }
+    //     }
+    // }
     info!("end of forwarding");
     Ok(())
 }

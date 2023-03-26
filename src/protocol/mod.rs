@@ -110,9 +110,9 @@ impl Command {
 
     fn serialized_len(&self) -> usize {
         1 + match self {
-            Command::Hello  =>  32,
-            Command::ErrorAck => 1 + 4,
-            Command::DataConnect => 1 + 8,
+            Command::Hello{..}  =>  32,
+            Command::ErrorAck {..}=> 1 + 4,
+            Command::DataConnect {..} => 1 + 8,
             Command::Heartbeat
             | Command::AckOk => 0,
         }

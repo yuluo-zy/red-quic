@@ -1,9 +1,8 @@
 use std::net::{Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::oneshot;
 use anyhow::{anyhow, Context, Result};
-use bytes::Bytes;
-use clap::command;
 use s2n_quic::{Client, Connection};
 use s2n_quic::client::Connect;
 use s2n_quic::stream::BidirectionalStream;
@@ -25,12 +24,13 @@ const KEEPALIVE_DURATION: Duration = Duration::new(20, 0);
 const KEEPALIVE_INTERVAL: Duration = Duration::new(8, 0);
 
 pub struct ClientChannelHandle {
+    config: Arc<ClientConfig>,
     shutdown_tx: oneshot::Sender<bool>,
 }
 
 impl ClientChannelHandle {
-    pub async fn build(remote_addr: &String, server_config: &ClientServiceConfig) -> Result<ClientChannelHandle> {
-        info!("start service {}", server_config.name);
+    pub async fn build(config: Arc<ClientConfig>) -> Result<ClientChannelHandle> {
+        info!("start service {:?}", &config.remote_addr);
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         // 创建 client 通道
         let mut runner = ClientChannel::build(server_config, remote_addr, shutdown_rx).await?;
@@ -39,6 +39,7 @@ impl ClientChannelHandle {
         });
 
         Ok(Self {
+            config,
             shutdown_tx
         })
     }
@@ -55,7 +56,6 @@ pub struct ClientChannel {
     // 服务名称
     pub(crate) shutdown_rx: oneshot::Receiver<bool>,
     pub(crate) transport: Connection,
-    pub(crate) token: ProtocolDigest,
     pub(crate) heartbeat_timeout: u64,             // Application layer heartbeat timeout in secs
 }
 
@@ -78,18 +78,16 @@ impl ClientChannel {
         connection.keep_alive(true)?;
         // let token = config.token.as_ref().ok_or(anyhow!("token is option"))?.clone();
         let digest = utils_digest(config.name.as_bytes());
-        let token = utils_digest(config.token.as_ref().unwrap().as_bytes());
 
-        Self::new(connection, digest, token, shutdown_rx).await
+        Self::new(connection, digest, shutdown_rx).await
     }
 
-    async fn new(conn: Connection, digest: ProtocolDigest, token: ProtocolDigest, shutdown_rx: oneshot::Receiver<bool>) -> Result<Self> {
+    async fn new(conn: Connection, digest: ProtocolDigest, shutdown_rx: oneshot::Receiver<bool>) -> Result<Self> {
         info!("创建连接");
         let conn = Self {
             digest,
             shutdown_rx,
             transport: conn,
-            token,
             heartbeat_timeout: 10,
         };
         Ok(conn)
@@ -111,26 +109,12 @@ impl ClientChannel {
         };
         cmd.write_to(stream).await?;
 
-        // 读取 ack 中的 随机秘钥
-        let service_digest = match Command::read_from(stream).await.with_context(|| anyhow!("command ack_token is error"))? {
-            Command::AckToken { digest } => digest,
-            _ => { return Err(anyhow!("command ack_token is error")); }
-        };
-
-        // 发送认证
-        let mut concat = Vec::from(self.token);
-        concat.extend_from_slice(&service_digest);
-
-        let cmd = Command::ShakeHands {
-            digest: utils_digest(&concat)
-        };
-        cmd.write_to(stream).await.unwrap();
-
         match Command::read_from(stream).await? {
             Command::AckOk => {
                 info!("认证成功, 开始传输")
             }
-            Command::AckServiceNotFind => {
+            Command::ErrorAck { error_type} => {
+                // todo: error info output
                 error!("传输服务未查询到, 建立传输失败");
                 return Err(anyhow!("service not find"));
             }
